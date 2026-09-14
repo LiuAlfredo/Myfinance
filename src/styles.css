@@ -1,0 +1,112 @@
+@import "tailwindcss";
+
+:root {
+  font-family: "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+  color: #1d2330;
+  background: #f6f7f9;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --surface-muted: #f3f5f8;
+  --surface-hover: #e9edf3;
+  --border: #e7eaf0;
+  --text: #1d2330;
+  --text-secondary: #687083;
+  --text-tertiary: #9299a8;
+  --accent: #5b6ee1;
+  --accent-strong: #4d5fc7;
+  --accent-soft: #eef0ff;
+  --success: #21865f;
+  --success-soft: #e8f7ef;
+  --danger: #c75858;
+  --danger-soft: #fceeee;
+  --warning: #b67b27;
+  --focus: rgba(91, 110, 225, 0.36);
+  --chart-text: #8a93a3;
+}
+
+:root[data-theme="dark"] {
+  color: #edf0f7;
+  background: #151821;
+  --bg: #151821;
+  --surface: #1e222d;
+  --surface-muted: #272c38;
+  --surface-hover: #303746;
+  --border: #303746;
+  --text: #edf0f7;
+  --text-secondary: #aeb6c5;
+  --text-tertiary: #788296;
+  --accent: #8292ff;
+  --accent-strong: #9ba8ff;
+  --accent-soft: #282d4a;
+  --success: #55bc8a;
+  --success-soft: #203b31;
+  --danger: #ee8383;
+  --danger-soft: #442b32;
+  --warning: #e1a64b;
+  --focus: rgba(130, 146, 255, 0.46);
+  --chart-text: #8590a4;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { min-width: 320px; min-height: 100%; margin: 0; }
+body { min-height: 100vh; overflow: hidden; background: var(--bg); }
+button, input, select { font: inherit; }
+button { cursor: pointer; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.app-shell { display: flex; height: 100vh; overflow: hidden; background: var(--bg); }
+.sidebar { display: flex; width: 240px; flex: 0 0 240px; flex-direction: column; border-right: 1px solid var(--border); background: color-mix(in srgb, var(--surface) 88%, transparent); transition: width 180ms ease, flex-basis 180ms ease; }
+.sidebar-collapsed { width: 68px; flex-basis: 68px; }
+.sidebar-brand { overflow: hidden; color: var(--text); font-size: 15px; font-weight: 650; letter-spacing: -0.02em; white-space: nowrap; }
+.sidebar-link { display: flex; min-height: 38px; align-items: center; gap: 11px; overflow: hidden; border-radius: 10px; padding: 0 10px; color: var(--text-secondary); font-size: 14px; font-weight: 500; text-decoration: none; transition: background 140ms ease, color 140ms ease; }
+.sidebar-link:hover { background: var(--surface-muted); color: var(--text); }
+.sidebar-link-active { background: var(--accent-soft); color: var(--accent); }
+.sidebar-label { white-space: nowrap; }
+.sidebar-section { margin: 19px 10px 6px; overflow: hidden; color: var(--text-tertiary); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; white-space: nowrap; }
+.sidebar-future-title { font-weight: 600; color: var(--text-secondary); }
+.sidebar-future-copy { margin-top: 4px; line-height: 1.45; }
+.sidebar-collapsed .sidebar-brand, .sidebar-collapsed .sidebar-label, .sidebar-collapsed .sidebar-section, .sidebar-collapsed .sidebar-future-title, .sidebar-collapsed .sidebar-future-copy, .sidebar-collapsed .sidebar-future-title + p { display: none; }
+.sidebar-collapsed .sidebar-link { justify-content: center; padding: 0; }
+.sidebar-collapsed > div:last-child { display: none; }
+
+.page-container { width: 100%; max-width: 1550px; margin: 0 auto; padding-bottom: 24px; }
+.summary-grid { display: grid; grid-template-columns: minmax(240px, 1.3fr) repeat(3, minmax(175px, 1fr)); gap: 16px; }
+.summary-card, .content-card, .account-card { border: 1px solid var(--border); background: var(--surface); box-shadow: 0 3px 14px rgba(31, 42, 65, 0.035); }
+.summary-card { min-height: 161px; border-radius: 18px; padding: 20px; color: var(--text); }
+.summary-card-prominent { background: linear-gradient(145deg, var(--surface), color-mix(in srgb, var(--accent-soft) 46%, var(--surface))); }
+.icon-badge { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 10px; }
+.icon-badge-primary { background: var(--accent-soft); color: var(--accent); }
+.icon-badge-success { background: var(--success-soft); color: var(--success); }
+.icon-badge-danger { background: var(--danger-soft); color: var(--danger); }
+.icon-badge-neutral { background: var(--surface-muted); color: var(--text-secondary); }
+.account-grid { display: grid; grid-template-columns: repeat(4, minmax(190px, 1fr)); gap: 16px; }
+.account-card { min-width: 0; border-radius: 16px; padding: 18px; transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease; }
+.account-card:hover { border-color: color-mix(in srgb, var(--accent) 26%, var(--border)); box-shadow: 0 9px 25px rgba(31, 42, 65, .09); transform: translateY(-2px); }
+.dashboard-bottom-grid { display: grid; grid-template-columns: minmax(360px, .9fr) minmax(440px, 1.1fr); gap: 16px; margin-top: 16px; }
+.content-card { border-radius: 18px; padding: 20px; }
+.card-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.card-heading h2 { margin: 0; color: var(--text); font-size: 15px; font-weight: 650; }
+.card-heading p { margin: 5px 0 0; color: var(--text-secondary); font-size: 12px; }
+.transaction-row { display: flex; align-items: center; gap: 12px; padding: 13px 0; }
+.transaction-row:first-child { padding-top: 8px; }
+.settings-stack { display: grid; max-width: 800px; gap: 14px; }
+.form-label { color: var(--text-secondary); font-size: 13px; font-weight: 500; }
+.form-control { display: block; width: 100%; margin-top: 6px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-muted); padding: 9px 10px; color: var(--text); outline: none; font-size: 14px; }
+.form-control:focus { border-color: var(--accent); box-shadow: 0 0 0 2px var(--focus); }
+
+@media (max-width: 1180px) {
+  .summary-grid { grid-template-columns: repeat(2, minmax(200px, 1fr)); }
+  .account-grid { grid-template-columns: repeat(2, minmax(200px, 1fr)); }
+  .dashboard-bottom-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  body { overflow: auto; }
+  .sidebar { width: 68px; flex-basis: 68px; }
+  .sidebar-brand, .sidebar-label, .sidebar-section, .sidebar-future-title, .sidebar-future-copy { display: none; }
+  .sidebar-link { justify-content: center; padding: 0; }
+  .sidebar > div:last-child { display: none; }
+  .summary-grid, .account-grid { grid-template-columns: 1fr; }
+  .app-shell main { padding: 18px 14px; }
+}
