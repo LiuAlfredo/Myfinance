@@ -1,24 +1,25 @@
-import { Menu, Plus, Search } from "lucide-react";
-import { useLocation } from "react-router-dom";
+import { ArrowLeft, Menu, Plus, Search } from "lucide-react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { useUiStore } from "@/stores/ui-store";
 
 const pageTitles: Record<string, string> = {
-  "/overview": "总览",
-  "/accounts": "账户",
-  "/transactions": "交易",
-  "/planning": "计划",
-  "/installments": "分期",
-  "/budgets": "预算",
-  "/statistics": "统计",
-  "/forecast": "预测",
-  "/settings": "设置",
-  "/purchase-check": "我能买这个吗？",
+  "/finance/overview": "总览",
+  "/finance/accounts": "账户",
+  "/finance/transactions": "交易",
+  "/finance/planning": "计划",
+  "/finance/installments": "分期",
+  "/finance/budgets": "预算",
+  "/finance/statistics": "统计",
+  "/finance/forecast": "预测",
+  "/finance/settings": "设置",
+  "/finance/purchase-check": "我能买这个吗？",
 };
 
 export function AppHeader() {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
   const setNewTransactionOpen = useUiStore((state) => state.setNewTransactionOpen);
   const setCommandPaletteOpen = useUiStore((state) => state.setCommandPaletteOpen);
@@ -28,6 +29,10 @@ export function AppHeader() {
       <div className="flex items-center gap-3">
         <Button aria-label="折叠侧边栏" variant="ghost" size="icon" onClick={toggleSidebar}>
           <Menu className="size-5" />
+        </Button>
+        <Button variant="ghost" onClick={() => navigate("/modules")}>
+          <ArrowLeft className="size-4" />
+          <span className="hidden sm:inline">返回模块选择</span>
         </Button>
         <h1 className="text-lg font-semibold tracking-tight text-[var(--text)]">{pageTitles[pathname] ?? "MyFinance"}</h1>
       </div>

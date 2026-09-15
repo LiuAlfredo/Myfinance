@@ -11,7 +11,7 @@ function isTauriRuntime() {
 
 export async function getAppInfo(): Promise<AppInfo> {
   if (!isTauriRuntime()) {
-    return { name: "MyFinance", version: "Web preview" };
+    return { name: "My Personal Affairs", version: "Web preview" };
   }
 
   return invoke<AppInfo>("get_app_info");

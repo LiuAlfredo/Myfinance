@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "MyFinance",
+  "productName": "My Personal Affairs",
   "version": "0.1.0",
   "identifier": "com.myfinance.desktop",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "MyFinance",
+        "title": "My Personal Affairs",
         "width": 1440,
         "height": 900,
         "minWidth": 1024,

@@ -19,3 +19,10 @@ tauri = { version = "2", features = [] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
 tauri-plugin-dialog = "2"
+aes-gcm = "0.10"
+argon2 = "0.5"
+base64 = "0.22"
+hmac = "0.12"
+rand = "0.8"
+sha2 = "0.10"
+zeroize = "1"
