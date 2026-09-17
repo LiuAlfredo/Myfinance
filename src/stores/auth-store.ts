@@ -16,6 +16,7 @@ interface AuthState {
   login: (password: string) => Promise<boolean>;
   logout: () => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<boolean>;
+  setupPassword: (password: string) => Promise<void>;
 }
 
 const isTauri = () => "__TAURI_INTERNALS__" in window;
@@ -106,5 +107,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     if (!(await passwordMatches(currentPassword))) return false;
     await savePassword(newPassword);
     return true;
+  },
+  setupPassword: async (password) => {
+    if (!isTauri()) throw new Error("请在桌面应用中设置软件密码");
+    await invoke("setup_app_password", { password });
+    window.sessionStorage.setItem(sessionKey, "true");
+    set({ isAuthenticated: true });
   },
 }));

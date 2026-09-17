@@ -66,6 +66,7 @@ fn migrate(conn: &Connection) -> Result<()> {
     }
     conn.execute_batch(include_str!("../migrations/002_private_calendar.sql"))?;
     conn.execute_batch(include_str!("../migrations/003_journey.sql"))?;
+    conn.execute_batch(include_str!("../migrations/004_password_vault.sql"))?;
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM categories", [], |r| r.get(0))?;
     if count == 0 {
         let now = now();

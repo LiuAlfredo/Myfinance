@@ -3,6 +3,7 @@ mod database;
 mod database_backup;
 mod journey;
 mod private_calendar;
+mod password_vault;
 mod security;
 
 #[derive(serde::Serialize)]
@@ -27,8 +28,16 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_app_info,
             security::verify_app_password,
+            security::app_password_setup_required,
+            security::setup_app_password,
             security::change_app_password,
             security::lock_private_data,
+            security::unlock_password_vault,
+            security::lock_password_vault,
+            password_vault::list_vault_items,
+            password_vault::get_vault_item,
+            password_vault::save_vault_item,
+            password_vault::delete_vault_item,
             commands::get_accounts,
             commands::save_account,
             commands::set_account_active,

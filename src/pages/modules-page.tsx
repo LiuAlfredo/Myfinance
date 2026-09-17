@@ -5,7 +5,7 @@ import {
   FileText,
   FolderKanban,
   LogOut,
-  Settings,
+  LockKeyhole,
   WalletCards,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -56,9 +56,9 @@ const modules = [
   },
   {
     number: "06",
-    name: "设置",
-    description: "修改登录密码与工作空间偏好。",
-    icon: Settings,
+    name: "密码与安全",
+    description: "修改软件密码并加密保存其他平台的密码记录。",
+    icon: LockKeyhole,
     available: true,
     to: "/personal-settings",
   },

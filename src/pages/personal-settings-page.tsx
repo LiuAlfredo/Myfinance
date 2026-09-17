@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Button } from "@/components/ui/button";
 import { useAuthStore } from "@/stores/auth-store";
+import { VaultPanel } from "@/features/password-vault/vault-panel";
 
 export function PersonalSettingsPage() {
   const navigate = useNavigate();
@@ -14,14 +15,15 @@ export function PersonalSettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [section, setSection] = useState<"vault" | "password">("vault");
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError(null);
     setSuccess(null);
 
-    if (newPassword.length < 6) {
-      setError("新密码至少需要 6 位");
+    if (newPassword.length < 12) {
+      setError("新密码至少需要 12 位");
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -65,16 +67,21 @@ export function PersonalSettingsPage() {
       </header>
 
       <div className="mx-auto w-full max-w-3xl px-5 py-12 md:py-20">
-        <p className="entry-eyebrow">SETTINGS</p>
-        <h1 className="mt-3 text-4xl font-semibold tracking-[-0.045em] text-[var(--text)]">设置</h1>
-        <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">管理工作空间的登录密码与基础偏好。</p>
+        <p className="entry-eyebrow">PASSWORDS & SECURITY</p>
+        <h1 className="mt-3 text-4xl font-semibold tracking-[-0.045em] text-[var(--text)]">密码与安全</h1>
+        <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">管理软件密码和其他平台的账号记录。</p>
+        <div className="mt-7 flex gap-3" role="tablist" aria-label="密码与安全">
+          <button type="button" role="tab" aria-selected={section === "vault"} className={section === "vault" ? "button-primary rounded-xl px-4 py-2" : "rounded-xl border border-[var(--border)] px-4 py-2"} onClick={() => setSection("vault")}>平台密码库</button>
+          <button type="button" role="tab" aria-selected={section === "password"} className={section === "password" ? "button-primary rounded-xl px-4 py-2" : "rounded-xl border border-[var(--border)] px-4 py-2"} onClick={() => setSection("password")}>软件密码</button>
+        </div>
+        {section === "vault" ? <VaultPanel /> : (
 
-        <section className="content-card mt-10">
+        <section className="content-card mt-6">
           <div className="flex items-start gap-3">
             <span className="module-icon"><KeyRound className="size-5" /></span>
             <div>
               <h2 className="font-semibold text-[var(--text)]">修改登录密码</h2>
-              <p className="mt-1 text-sm text-[var(--text-secondary)]">修改前需要验证当前密码，新密码至少为 6 位。</p>
+              <p className="mt-1 text-sm text-[var(--text-secondary)]">修改前需要验证当前密码，新密码至少为 12 位。旧备份仍需使用备份时的密码。</p>
             </div>
           </div>
 
@@ -97,7 +104,7 @@ export function PersonalSettingsPage() {
                 type="password"
                 autoComplete="new-password"
                 required
-                minLength={6}
+                minLength={12}
                 value={newPassword}
                 onChange={(event) => setNewPassword(event.target.value)}
               />
@@ -109,7 +116,7 @@ export function PersonalSettingsPage() {
                 type="password"
                 autoComplete="new-password"
                 required
-                minLength={6}
+                minLength={12}
                 value={confirmPassword}
                 onChange={(event) => setConfirmPassword(event.target.value)}
               />
@@ -130,6 +137,7 @@ export function PersonalSettingsPage() {
             </div>
           </form>
         </section>
+        )}
       </div>
     </main>
   );
