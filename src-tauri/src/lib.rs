@@ -1,5 +1,6 @@
 mod commands;
 mod database;
+mod database_backup;
 mod journey;
 mod private_calendar;
 mod security;
@@ -71,14 +72,20 @@ pub fn run() {
             journey::save_journey_project,
             journey::delete_journey_project,
             journey::save_journey_project_item,
+            journey::delete_journey_project_item,
             journey::save_journey_milestone,
+            journey::delete_journey_milestone,
             journey::toggle_journey_milestone,
             journey::add_journey_log,
+            journey::delete_journey_log,
+            journey::update_journey_log,
             journey::save_journey_idea,
             journey::delete_journey_idea,
             journey::convert_journey_idea,
             journey::save_journey_goal,
+            journey::delete_journey_goal,
             private_calendar::get_private_calendar_month,
+            private_calendar::get_private_calendar_statistics,
             private_calendar::get_private_calendar_day,
             private_calendar::save_private_calendar_event,
             private_calendar::delete_private_calendar_event

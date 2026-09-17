@@ -21,7 +21,7 @@ interface AuthState {
 const isTauri = () => "__TAURI_INTERNALS__" in window;
 
 function hasActiveSession() {
-  return window.sessionStorage.getItem(sessionKey) === "true";
+  return !isTauri() && window.sessionStorage.getItem(sessionKey) === "true";
 }
 
 function bytesToBase64(bytes: Uint8Array) {
@@ -87,16 +87,17 @@ export const useAuthStore = create<AuthState>((set) => ({
       ? await invoke<boolean>("verify_app_password", { password })
       : await passwordMatches(password);
     if (!valid) return false;
+    window.sessionStorage.removeItem("my-personal-affairs:login-notice");
     window.sessionStorage.setItem(sessionKey, "true");
     set({ isAuthenticated: true });
     return true;
   },
   logout: async () => {
+    window.sessionStorage.removeItem(sessionKey);
+    set({ isAuthenticated: false });
     if (isTauri()) {
       try { await invoke("lock_private_data"); } catch { /* Session is still cleared locally. */ }
     }
-    window.sessionStorage.removeItem(sessionKey);
-    set({ isAuthenticated: false });
   },
   changePassword: async (currentPassword, newPassword) => {
     if (isTauri()) {

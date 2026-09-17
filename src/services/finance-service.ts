@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { useAuthStore } from "@/stores/auth-store";
 import type { AccountRecord, CategoryRecord, DashboardData, TransactionRecord } from "@/types/finance";
 
 const isTauri = () => typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -59,7 +60,21 @@ export async function getForecast(days: number): Promise<ForecastRecord[]> { if 
 export async function canBuy(amount: number, purchaseDate: number): Promise<PurchaseResult> { if (isTauri()) { const r = await invoke<PurchaseResult>("can_buy", { amount, purchaseDate }); return { ...r, currentBalance: fromMinorUnit(r.currentBalance), balanceAfterPurchase: fromMinorUnit(r.balanceAfterPurchase), minimumFutureBalance: fromMinorUnit(r.minimumFutureBalance), safetyBalance: fromMinorUnit(r.safetyBalance) }; } const d = await getDashboard(); const safety = Number(await getSetting("safety_balance") ?? toMinorUnit("10000")) / 100; const after = d.totalBalance - fromMinorUnit(amount); return { verdict: after < safety ? "NOT_RECOMMENDED" : after < safety * 2 ? "CAUTION" : "OK", currentBalance: d.totalBalance, balanceAfterPurchase: after, minimumFutureBalance: after, safetyBalance: safety, reason: after < safety ? "购买后余额低于安全余额" : "预计现金流能够覆盖这笔购买" }; }
 export async function exportFinanceJson(): Promise<string> { const [accounts, transactions, categories] = await Promise.all([getAccounts(), getTransactions(), getCategories()]); return JSON.stringify({ exportedAt: new Date().toISOString(), accounts, transactions, categories }, null, 2); }
 export async function exportTransactionsCsv(): Promise<string> { const rows = await getTransactions(); return ["id,type,account,category,amount,currency,date,merchant,note", ...rows.map((r) => [r.id, r.type, r.account, r.category, r.amount.toFixed(2), r.currency, new Date(r.transactionDate).toISOString(), r.merchant, r.note].map((v) => `"${v.replaceAll('"', '""')}"`).join(","))].join("\n"); }
-export async function backupDatabase(destination: string): Promise<void> { if (isTauri()) { await invoke("backup_database", { destination }); return; } throw new Error("SQLite 备份需要在桌面应用中执行"); }
-export async function restoreDatabase(source: string): Promise<void> { if (isTauri()) { await invoke("restore_database", { source }); window.dispatchEvent(new Event("finance-data-changed")); return; } throw new Error("SQLite 恢复需要在桌面应用中执行"); }
+function databaseError(reason: unknown): Error {
+  return reason instanceof Error ? reason : new Error(typeof reason === "string" ? reason : "数据库操作失败，请重试");
+}
+export async function backupDatabase(destination: string): Promise<void> {
+  if (!isTauri()) throw new Error("SQLite 备份需要在桌面应用中执行");
+  try { await invoke("backup_database", { destination }); }
+  catch (reason) { throw databaseError(reason); }
+}
+export async function restoreDatabase(source: string): Promise<void> {
+  if (!isTauri()) throw new Error("SQLite 恢复需要在桌面应用中执行");
+  try { await invoke("restore_database", { source }); }
+  catch (reason) { throw databaseError(reason); }
+  window.sessionStorage.setItem("my-personal-affairs:login-notice", "数据库已恢复，请使用备份时的密码重新登录。首次设置密码前的旧备份使用初始密码。");
+  await useAuthStore.getState().logout();
+  window.dispatchEvent(new Event("finance-data-changed"));
+}
 export interface FileInfo { name: string; size: number; modified: number }
 export async function getFileInfo(path: string): Promise<FileInfo> { if (isTauri()) return invoke<FileInfo>("get_file_info", { path }); throw new Error("文件信息需要在桌面应用中读取"); }

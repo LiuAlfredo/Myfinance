@@ -47,6 +47,7 @@ export function LoginPage() {
         </p>
 
         <form className="mt-8" onSubmit={handleSubmit}>
+          {window.sessionStorage.getItem("my-personal-affairs:login-notice") ? <p role="status" className="mb-4 text-sm text-[var(--text-secondary)]">{window.sessionStorage.getItem("my-personal-affairs:login-notice")}</p> : null}
           <label className="form-label" htmlFor="app-password">密码</label>
           <div className={`password-field ${error ? "password-field-error" : ""}`}>
             <LockKeyhole className="size-[18px] shrink-0 text-[var(--text-tertiary)]" />

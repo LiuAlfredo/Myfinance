@@ -38,5 +38,23 @@ export interface JourneyGoal {
   status: GoalStatus; createdAt: number; updatedAt: number;
 }
 
+export interface JourneyIdeaSummary {
+  id: string;
+  title: string;
+}
+
+export interface JourneyGoalSummary {
+  id: string;
+  title: string;
+  horizon: GoalHorizon;
+}
+
 export interface JourneyDashboard { projects: JourneyProject[]; ideas: JourneyIdea[]; goals: JourneyGoal[] }
-export interface JourneyProjectDetail { project: JourneyProject; items: JourneyProjectItem[]; milestones: JourneyMilestone[]; logs: JourneyLog[] }
+export interface JourneyProjectDetail {
+  project: JourneyProject;
+  items: JourneyProjectItem[];
+  milestones: JourneyMilestone[];
+  logs: JourneyLog[];
+  sourceIdea?: JourneyIdeaSummary | null;
+  linkedGoals?: JourneyGoalSummary[];
+}

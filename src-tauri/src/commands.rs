@@ -559,7 +559,15 @@ pub fn search_all(app: tauri::AppHandle, query: String) -> Result<Vec<String>, S
     let c = connect(&app).map_err(|e| e.to_string())?;
     let q = format!("%{}%", query);
     let mut out = Vec::new();
-    let mut s=c.prepare("SELECT '账户 · '||name FROM accounts WHERE name LIKE ?1 UNION ALL SELECT '交易 · '||merchant FROM transactions WHERE merchant LIKE ?1 OR note LIKE ?1 UNION ALL SELECT '分类 · '||name FROM categories WHERE name LIKE ?1 LIMIT 30").map_err(|e|e.to_string())?;
+    let mut s = c.prepare(
+        "SELECT '账户 · '||name FROM accounts WHERE name LIKE ?1 \
+         UNION ALL SELECT '交易 · '||merchant FROM transactions WHERE merchant LIKE ?1 OR note LIKE ?1 \
+         UNION ALL SELECT '分类 · '||name FROM categories WHERE name LIKE ?1 \
+         UNION ALL SELECT '项目 · '||title FROM journey_projects WHERE title LIKE ?1 OR summary LIKE ?1 \
+         UNION ALL SELECT '灵感 · '||title FROM journey_ideas WHERE title LIKE ?1 OR tags LIKE ?1 \
+         UNION ALL SELECT '目标 · '||title FROM journey_goals WHERE title LIKE ?1 \
+         LIMIT 30"
+    ).map_err(|e| e.to_string())?;
     let rows = s.query_map([q], |r| r.get(0)).map_err(|e| e.to_string())?;
     for r in rows {
         out.push(r.map_err(|e| e.to_string())?)
@@ -994,13 +1002,7 @@ pub fn can_buy(
 #[tauri::command]
 pub fn backup_database(app: tauri::AppHandle, destination: String) -> Result<(), String> {
     let src = crate::database::path(&app).map_err(|e| e.to_string())?;
-    let dest = std::path::Path::new(&destination);
-    if dest == src.as_path() {
-        return Err("备份目标不能是当前数据库".into());
-    }
-    std::fs::copy(src, dest)
-        .map_err(|e| e.to_string())
-        .map(|_| ())
+    crate::database_backup::backup(&src, std::path::Path::new(&destination))
 }
 #[tauri::command]
 pub fn restore_database(
@@ -1008,39 +1010,8 @@ pub fn restore_database(
     source: String,
     security: tauri::State<SecurityState>,
 ) -> Result<(), String> {
-    let src = std::path::Path::new(&source);
-    if !src.exists() {
-        return Err("备份文件不存在".into());
-    }
-    let probe = rusqlite::Connection::open(src).map_err(|e| e.to_string())?;
-    let check: String = probe
-        .query_row("PRAGMA integrity_check", [], |r| r.get(0))
-        .map_err(|e| e.to_string())?;
-    if check != "ok" {
-        return Err("备份完整性校验失败".into());
-    }
     let current = crate::database::path(&app).map_err(|e| e.to_string())?;
-    let temp = current.with_extension("restore.tmp");
-    std::fs::copy(src, &temp).map_err(|e| e.to_string())?;
-    let temp_probe = rusqlite::Connection::open(&temp).map_err(|e| e.to_string())?;
-    let temp_check: String = temp_probe
-        .query_row("PRAGMA integrity_check", [], |r| r.get(0))
-        .map_err(|e| e.to_string())?;
-    if temp_check != "ok" {
-        let _ = std::fs::remove_file(&temp);
-        return Err("临时数据库完整性校验失败".into());
-    }
-    drop(temp_probe);
-    if current.exists() {
-        let previous = current.with_extension(format!("previous-{}", now()));
-        std::fs::rename(&current, &previous).map_err(|e| e.to_string())?;
-        if let Err(err) = std::fs::rename(&temp, &current) {
-            let _ = std::fs::rename(&previous, &current);
-            return Err(err.to_string());
-        }
-    } else {
-        std::fs::rename(&temp, &current).map_err(|e| e.to_string())?
-    }
+    crate::database_backup::restore(&current, std::path::Path::new(&source))?;
     security.lock()?;
     Ok(())
 }

@@ -1,8 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
+import { useAuthStore } from "@/stores/auth-store";
 import type {
   PrivateCalendarDayMark,
   PrivateCalendarEvent,
   PrivateCalendarEventInput,
+  PrivateCalendarYearStats,
 } from "@/features/private-calendar/types";
 
 function requireDesktop() {
@@ -11,22 +13,33 @@ function requireDesktop() {
   }
 }
 
-export async function getPrivateCalendarMonth(year: number, month: number): Promise<PrivateCalendarDayMark[]> {
+async function privateInvoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   requireDesktop();
-  return invoke("get_private_calendar_month", { year, month });
+  try {
+    return await invoke<T>(command, args);
+  } catch (reason) {
+    const message = reason instanceof Error ? reason.message : typeof reason === "string" ? reason : "私密日历操作失败，请重试";
+    if (message.includes("私密数据已锁定")) await useAuthStore.getState().logout();
+    throw new Error(message);
+  }
+}
+
+export async function getPrivateCalendarMonth(year: number, month: number): Promise<PrivateCalendarDayMark[]> {
+  return privateInvoke("get_private_calendar_month", { year, month });
 }
 
 export async function getPrivateCalendarDay(dayKey: string): Promise<PrivateCalendarEvent[]> {
-  requireDesktop();
-  return invoke("get_private_calendar_day", { dayKey });
+  return privateInvoke("get_private_calendar_day", { dayKey });
 }
 
 export async function savePrivateCalendarEvent(input: PrivateCalendarEventInput, eventId?: string): Promise<PrivateCalendarEvent> {
-  requireDesktop();
-  return invoke("save_private_calendar_event", { input, idOpt: eventId });
+  return privateInvoke("save_private_calendar_event", { input, idOpt: eventId });
 }
 
 export async function deletePrivateCalendarEvent(eventId: string): Promise<void> {
-  requireDesktop();
-  await invoke("delete_private_calendar_event", { id: eventId });
+  await privateInvoke("delete_private_calendar_event", { id: eventId });
+}
+
+export async function getPrivateCalendarStatistics(): Promise<PrivateCalendarYearStats[]> {
+  return privateInvoke("get_private_calendar_statistics");
 }

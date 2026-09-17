@@ -209,13 +209,52 @@ pub fn get_journey_project(
         .map_err(|e| e.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
+
+    let source_idea = connection
+        .query_row(
+            "SELECT id, title FROM journey_ideas WHERE converted_project_id=?1",
+            [&id],
+            |r| Ok(JourneyIdeaSummary { id: r.get(0)?, title: r.get(1)? }),
+        )
+        .optional()
+        .map_err(|e| e.to_string())?;
+
+    let mut goals_query = connection
+        .prepare("SELECT id, title, horizon, linked_project_ids FROM journey_goals ORDER BY updated_at DESC")
+        .map_err(|e| e.to_string())?;
+    let goal_rows = goals_query
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, String>(3)?,
+            ))
+        })
+        .map_err(|e| e.to_string())?;
+    let mut linked_goals = Vec::new();
+    for row in goal_rows {
+        let (g_id, g_title, g_horizon, g_linked) = row.map_err(|e| e.to_string())?;
+        let ids: Vec<String> = serde_json::from_str(&g_linked).unwrap_or_default();
+        if ids.contains(&id) {
+            linked_goals.push(JourneyGoalSummary {
+                id: g_id,
+                title: g_title,
+                horizon: g_horizon,
+            });
+        }
+    }
+
     Ok(JourneyProjectDetail {
         project,
         items,
         milestones,
         logs,
+        source_idea,
+        linked_goals,
     })
 }
+
 
 #[tauri::command]
 pub fn save_journey_project(
@@ -345,6 +384,69 @@ pub fn add_journey_log(app: tauri::AppHandle, input: JourneyLogInput) -> Result<
 }
 
 #[tauri::command]
+
+pub fn delete_journey_project_item(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let connection = connect(&app).map_err(|e| e.to_string())?;
+    let changed = connection
+        .execute("DELETE FROM journey_project_items WHERE id=?1", [&id])
+        .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        Err("任务不存在".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+#[tauri::command]
+pub fn delete_journey_milestone(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let connection = connect(&app).map_err(|e| e.to_string())?;
+    let changed = connection
+        .execute("DELETE FROM journey_milestones WHERE id=?1", [&id])
+        .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        Err("里程碑不存在".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+#[tauri::command]
+pub fn delete_journey_log(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let connection = connect(&app).map_err(|e| e.to_string())?;
+    let changed = connection
+        .execute("DELETE FROM journey_logs WHERE id=?1", [&id])
+        .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        Err("项目记录不存在".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+#[tauri::command]
+pub fn update_journey_log(
+    app: tauri::AppHandle,
+    id: String,
+    kind: String,
+    content: String,
+) -> Result<(), String> {
+    one_of(&kind, LOG_KINDS, "记录类型")?;
+    let content = required(&content, "记录内容", 2000)?;
+    let connection = connect(&app).map_err(|e| e.to_string())?;
+    let changed = connection
+        .execute(
+            "UPDATE journey_logs SET kind=?2, content=?3 WHERE id=?1",
+            params![id, kind, content],
+        )
+        .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        Err("项目记录不存在".to_string())
+    } else {
+        Ok(())
+    }
+}
+
+#[tauri::command]
 pub fn save_journey_idea(
     app: tauri::AppHandle,
     input: JourneyIdeaInput,
@@ -419,6 +521,19 @@ pub fn save_journey_goal(
     let timestamp = now();
     connection.execute("INSERT INTO journey_goals(id,title,reason,horizon,progress,target_date,next_action,linked_project_ids,status,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?10) ON CONFLICT(id) DO UPDATE SET title=excluded.title,reason=excluded.reason,horizon=excluded.horizon,progress=excluded.progress,target_date=excluded.target_date,next_action=excluded.next_action,linked_project_ids=excluded.linked_project_ids,status=excluded.status,updated_at=excluded.updated_at", params![id_opt.unwrap_or_else(id),title,input.reason.trim(),input.horizon,progress,input.target_date,input.next_action.trim(),linked,input.status,timestamp]).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+pub fn delete_journey_goal(app: tauri::AppHandle, id: String) -> Result<(), String> {
+    let connection = connect(&app).map_err(|e| e.to_string())?;
+    let changed = connection
+        .execute("DELETE FROM journey_goals WHERE id=?1", [&id])
+        .map_err(|e| e.to_string())?;
+    if changed == 0 {
+        Err("长期目标不存在".to_string())
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(test)]

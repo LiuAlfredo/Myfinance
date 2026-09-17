@@ -19,3 +19,12 @@ export interface PrivateCalendarEventInput {
   location: string;
   note: string;
 }
+
+export interface PrivateCalendarYearStats {
+  year: number;
+  total: number;
+  activeDays: number;
+  months: number[];
+  firstDay: string;
+  lastDay: string;
+}

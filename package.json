@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --pretty false",
     "lint": "eslint .",
+    "test": "vitest run",
     "tauri": "tauri"
   },
   "dependencies": {
@@ -28,6 +29,7 @@
     "@eslint/js": "^9.0.0",
     "@tailwindcss/vite": "^4.0.0",
     "@tauri-apps/cli": "^2.0.0",
+    "@testing-library/react": "^16.3.3",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
@@ -36,9 +38,11 @@
     "eslint-plugin-react-hooks": "^5.1.0",
     "eslint-plugin-react-refresh": "^0.4.0",
     "globals": "^15.0.0",
+    "jsdom": "^26.1.0",
     "tailwindcss": "^4.0.0",
     "typescript": "~5.7.0",
     "typescript-eslint": "^8.0.0",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "vitest": "^3.2.7"
   }
 }

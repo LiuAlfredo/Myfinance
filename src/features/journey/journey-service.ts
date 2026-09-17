@@ -13,10 +13,15 @@ export async function getJourneyProject(id: string): Promise<JourneyProjectDetai
 export async function saveJourneyProject(input: JourneyProjectInput, projectId?: string): Promise<JourneyProject> { requireDesktop(); return invoke("save_journey_project", { input, idOpt: projectId }); }
 export async function deleteJourneyProject(projectId: string): Promise<void> { requireDesktop(); await invoke("delete_journey_project", { id: projectId }); }
 export async function saveJourneyProjectItem(input: Omit<JourneyProjectItem, "id">, itemId?: string): Promise<void> { requireDesktop(); await invoke("save_journey_project_item", { input, idOpt: itemId }); }
+export async function deleteJourneyProjectItem(itemId: string): Promise<void> { requireDesktop(); await invoke("delete_journey_project_item", { id: itemId }); }
 export async function saveJourneyMilestone(input: Omit<JourneyMilestone, "id">, milestoneId?: string): Promise<void> { requireDesktop(); await invoke("save_journey_milestone", { input, idOpt: milestoneId }); }
+export async function deleteJourneyMilestone(milestoneId: string): Promise<void> { requireDesktop(); await invoke("delete_journey_milestone", { id: milestoneId }); }
 export async function toggleJourneyMilestone(id: string, completed: boolean): Promise<void> { requireDesktop(); await invoke("toggle_journey_milestone", { id, completed }); }
 export async function addJourneyLog(projectId: string, kind: LogKind, content: string): Promise<void> { requireDesktop(); await invoke("add_journey_log", { input: { projectId, kind, content } }); }
+export async function deleteJourneyLog(logId: string): Promise<void> { requireDesktop(); await invoke("delete_journey_log", { id: logId }); }
+export async function updateJourneyLog(logId: string, kind: LogKind, content: string): Promise<void> { requireDesktop(); await invoke("update_journey_log", { id: logId, kind, content }); }
 export async function saveJourneyIdea(input: Omit<JourneyIdea, "id" | "convertedProjectId" | "createdAt" | "updatedAt">, ideaId?: string): Promise<void> { requireDesktop(); await invoke("save_journey_idea", { input, idOpt: ideaId }); }
 export async function deleteJourneyIdea(ideaId: string): Promise<void> { requireDesktop(); await invoke("delete_journey_idea", { id: ideaId }); }
 export async function convertJourneyIdea(ideaId: string): Promise<string> { requireDesktop(); return invoke("convert_journey_idea", { ideaId }); }
 export async function saveJourneyGoal(input: Omit<JourneyGoal, "id" | "createdAt" | "updatedAt">, goalId?: string): Promise<void> { requireDesktop(); await invoke("save_journey_goal", { input, idOpt: goalId }); }
+export async function deleteJourneyGoal(goalId: string): Promise<void> { requireDesktop(); await invoke("delete_journey_goal", { id: goalId }); }

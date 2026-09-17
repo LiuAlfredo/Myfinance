@@ -117,6 +117,7 @@ fn unwrap_data_key(
     let nonce = BASE64
         .decode(nonce)
         .map_err(|_| "安全配置已损坏".to_string())?;
+    if nonce.len() != 12 { return Err("安全配置已损坏".to_string()); }
     let wrapping_key = derive_wrapping_key(password, &salt)?;
     let cipher =
         Aes256Gcm::new_from_slice(&wrapping_key).map_err(|_| "数据密钥初始化失败".to_string())?;
@@ -212,6 +213,20 @@ pub fn lock_private_data(state: tauri::State<SecurityState>) -> Result<(), Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn locked_state_rejects_access_and_password_rewrapping_preserves_data_key() {
+        let state = SecurityState::new();
+        assert!(state.key().is_err());
+        state.unlock_with(vec![42_u8; 32]).unwrap();
+        let key = state.key().unwrap();
+        let (salt, wrapped, nonce) = wrap_data_key("new-password", &key).unwrap();
+        assert_eq!(unwrap_data_key("new-password", &salt, &wrapped, &nonce).unwrap(), key.to_vec());
+        assert!(unwrap_data_key("old-password", &salt, &wrapped, &nonce).is_err());
+        assert!(unwrap_data_key("new-password", &salt, &wrapped, &BASE64.encode([0_u8; 3])).is_err());
+        state.lock().unwrap();
+        assert!(state.key().is_err());
+    }
 
     #[test]
     fn wrapping_key_requires_the_same_password() {

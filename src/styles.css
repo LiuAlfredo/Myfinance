@@ -126,6 +126,13 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .private-calendar-day:hover { background: var(--surface-muted); color: var(--text); }
 .private-calendar-day-marked { border-color: color-mix(in srgb, var(--accent) 24%, var(--border)); background: color-mix(in srgb, var(--accent-soft) 72%, var(--surface)); color: var(--accent); }
 .private-calendar-day-selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.private-calendar-day-outside { opacity: .38; }
+.private-calendar-day:focus-visible, .private-stat-month:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.private-stat-month { display: flex; flex-direction: column; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 10px; padding: 9px 4px; transition: background 140ms ease, border-color 140ms ease; }
+.private-stat-month:hover { background: var(--accent-soft); border-color: var(--accent); }
+.private-stat-track { display: flex; align-items: flex-end; width: 14px; height: 38px; border-radius: 4px; overflow: hidden; background: var(--surface-muted); }
+.private-stat-fill { display: block; width: 100%; border-radius: 4px; background: var(--accent); transition: height 180ms ease; }
+@media (prefers-reduced-motion: reduce) { .private-calendar-day, .private-stat-month, .private-stat-fill { transition: none; } }
 .private-calendar-today { color: var(--text-tertiary); font-size: 9px; font-weight: 650; }
 .private-calendar-count { position: absolute; right: 8px; bottom: 8px; display: grid; min-width: 18px; height: 18px; place-items: center; border-radius: 999px; background: var(--accent); padding: 0 5px; color: white; font-size: 9px; font-weight: 700; }
 

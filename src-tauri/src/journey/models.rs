@@ -169,6 +169,21 @@ pub struct JourneyGoalInput {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct JourneyIdeaSummary {
+    pub id: String,
+    pub title: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JourneyGoalSummary {
+    pub id: String,
+    pub title: String,
+    pub horizon: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct JourneyDashboard {
     pub projects: Vec<JourneyProject>,
     pub ideas: Vec<JourneyIdea>,
@@ -182,4 +197,6 @@ pub struct JourneyProjectDetail {
     pub items: Vec<JourneyProjectItem>,
     pub milestones: Vec<JourneyMilestone>,
     pub logs: Vec<JourneyLog>,
+    pub source_idea: Option<JourneyIdeaSummary>,
+    pub linked_goals: Vec<JourneyGoalSummary>,
 }
