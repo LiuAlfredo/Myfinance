@@ -32,19 +32,19 @@ const modules = [
   },
   {
     number: "03",
-    name: "Tasks",
-    description: "收集、安排和跟踪个人任务。",
+    name: "日常事务",
+    description: "收集任务、安排日期并管理生活日程。",
     icon: CheckSquare2,
-    available: false,
-    to: "",
+    available: true,
+    to: "/daily",
   },
   {
     number: "04",
-    name: "Notes",
-    description: "保存想法、资料和个人备忘。",
+    name: "生活资料",
+    description: "保存笔记、资料，并关联项目或任务。",
     icon: FileText,
-    available: false,
-    to: "",
+    available: true,
+    to: "/knowledge",
   },
   {
     number: "05",
@@ -79,6 +79,7 @@ export function ModulesPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="ghost" onClick={() => navigate("/today")}>今日首页</Button>
           <ThemeSwitcher />
           <Button
             variant="ghost"
@@ -98,7 +99,7 @@ export function ModulesPage() {
           <p className="entry-eyebrow">MODULES</p>
           <h1 className="mt-3 text-4xl font-semibold tracking-[-0.045em] text-[var(--text)]">选择一个模块</h1>
           <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">
-            每个模块保持独立，数据与功能按需扩展。当前可进入 MyFinance、My Journey 和私密日历。
+            从今日首页进入每天的行动，也可以打开全部模块管理各类生活信息。
           </p>
         </div>
 

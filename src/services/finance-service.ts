@@ -1,3 +1,4 @@
+import { flushAllNotes } from "@/features/life/note-save-queue";
 import { invoke } from "@tauri-apps/api/core";
 import { useAuthStore } from "@/stores/auth-store";
 import type { AccountRecord, CategoryRecord, DashboardData, TransactionRecord } from "@/types/finance";
@@ -70,9 +71,9 @@ export async function backupDatabase(destination: string): Promise<void> {
 }
 export async function restoreDatabase(source: string): Promise<void> {
   if (!isTauri()) throw new Error("SQLite 恢复需要在桌面应用中执行");
-  try { await invoke("restore_database", { source }); }
+  try { await flushAllNotes(); await invoke("restore_database", { source }); }
   catch (reason) { throw databaseError(reason); }
-  window.sessionStorage.setItem("my-personal-affairs:login-notice", "数据库已恢复，请使用备份时的密码重新登录。首次设置密码前的旧备份使用初始密码。");
+  window.sessionStorage.setItem("my-personal-affairs:login-notice", "数据库已恢复，请使用备份时的密码重新登录；不含安全配置的旧备份会进入首次设置流程。");
   await useAuthStore.getState().logout();
   window.dispatchEvent(new Event("finance-data-changed"));
 }

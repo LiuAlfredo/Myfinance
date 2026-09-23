@@ -25,7 +25,7 @@ export function LoginPage() {
     return () => { active = false; };
   }, []);
 
-  if (isAuthenticated) return <Navigate replace to="/modules" />;
+  if (isAuthenticated) return <Navigate replace to="/today" />;
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -35,7 +35,7 @@ export function LoginPage() {
         if (password.length < 12) { setError("软件密码至少需要 12 位"); return; }
         if (password !== confirmation) { setError("两次输入的密码不一致"); return; }
         await setupPassword(password);
-        navigate("/modules", { replace: true });
+        navigate("/today", { replace: true });
         return;
       }
       if (!(await login(password))) {
@@ -43,7 +43,7 @@ export function LoginPage() {
         setPassword("");
         return;
       }
-      navigate("/modules", { replace: true });
+      navigate("/today", { replace: true });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : typeof reason === "string" ? reason : "无法验证密码，请检查本地数据库后重试");
     } finally {

@@ -67,6 +67,15 @@ fn validate_snapshot(connection: &Connection) -> Result<(), String> {
             if security_count != 1 { return Err("密码库备份缺少主密钥配置".into()); }
         }
     }
+    for (table, columns, message) in [
+        ("daily_tasks", "SELECT id,title,note,status,priority,planned_day,due_at,project_id,parent_id,source_item_id,completed_at,created_at,updated_at FROM daily_tasks LIMIT 0", "日常任务备份结构无效"),
+        ("daily_events", "SELECT id,title,all_day,day_key,starts_at,ends_at,location,note,created_at,updated_at FROM daily_events LIMIT 0", "日程备份结构无效"),
+        ("knowledge_notes", "SELECT id,title,body,tags,is_pinned,is_archived,deleted_at,project_id,task_id,created_at,updated_at FROM knowledge_notes LIMIT 0", "生活资料备份结构无效"),
+        ("today_pinned_projects", "SELECT project_id,pinned_at FROM today_pinned_projects LIMIT 0", "重点项目备份结构无效"),
+    ] {
+        let exists: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)", [table], |row| row.get(0)).map_err(|error| error.to_string())?;
+        if exists { connection.prepare(columns).map_err(|_| message)?; }
+    }
     Ok(())
 }
 
@@ -100,6 +109,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn rejects_incomplete_life_tables_before_restore() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch("CREATE TABLE accounts(id TEXT,name TEXT,initial_balance INTEGER);
+            CREATE TABLE transactions(id TEXT,account_id TEXT,amount INTEGER);
+            CREATE TABLE settings(key TEXT,value TEXT);
+            CREATE TABLE daily_tasks(id TEXT,title TEXT,status TEXT,priority TEXT,planned_day TEXT,due_at INTEGER,project_id TEXT);").unwrap();
+        assert_eq!(validate_snapshot(&connection).unwrap_err(), "日常任务备份结构无效");
+    }
+
+    #[test]
     fn backup_and_restore_include_live_wal_and_reject_unrelated_databases() {
         let directory = std::env::temp_dir().join(format!("myfinance-backup-test-{}", crate::database::id()));
         std::fs::create_dir_all(&directory).unwrap();
@@ -115,9 +134,14 @@ mod tests {
                 CREATE TABLE app_security(id INTEGER PRIMARY KEY,password_hash TEXT,wrapped_data_key TEXT);
                 CREATE TABLE vault_keys(id INTEGER PRIMARY KEY,version INTEGER,wrapped_key TEXT,created_at INTEGER);
                 CREATE TABLE vault_items(id TEXT PRIMARY KEY,version INTEGER,key_version INTEGER,payload TEXT,created_at INTEGER,updated_at INTEGER);
+                CREATE TABLE daily_tasks(id TEXT PRIMARY KEY,title TEXT,status TEXT,priority TEXT,planned_day TEXT,due_at INTEGER,project_id TEXT,note TEXT,parent_id TEXT,source_item_id TEXT,completed_at INTEGER,created_at INTEGER,updated_at INTEGER);
+                CREATE TABLE daily_events(id TEXT PRIMARY KEY,title TEXT,all_day INTEGER,day_key TEXT,starts_at INTEGER,ends_at INTEGER,location TEXT,note TEXT,created_at INTEGER,updated_at INTEGER);
+                CREATE TABLE knowledge_notes(id TEXT PRIMARY KEY,title TEXT,body TEXT,tags TEXT,deleted_at INTEGER,project_id TEXT,task_id TEXT,is_pinned INTEGER,is_archived INTEGER,created_at INTEGER,updated_at INTEGER);
                 INSERT INTO app_security VALUES(1,'hash','wrapped-master');
                 INSERT INTO vault_keys VALUES(1,1,'wrapped-vault',1);
                 INSERT INTO vault_items VALUES('record',1,1,'ciphertext',1,1);
+                INSERT INTO daily_tasks(id,title,status,priority,planned_day,due_at,project_id) VALUES('task','today','TODO','NORMAL','2026-09-23',NULL,NULL);
+                INSERT INTO knowledge_notes(id,title,body,tags,deleted_at,project_id,task_id) VALUES('note','life','body','tag',NULL,NULL,'task');
                 INSERT INTO settings VALUES('test','original');").unwrap();
             backup(&current, &saved).unwrap();
             let exported = Connection::open(&saved).unwrap();
@@ -125,6 +149,8 @@ mod tests {
             assert_eq!(value, "original");
             let encrypted: String = exported.query_row("SELECT payload FROM vault_items WHERE id='record'", [], |row| row.get(0)).unwrap();
             assert_eq!(encrypted, "ciphertext");
+            let note: String = exported.query_row("SELECT body FROM knowledge_notes WHERE id='note'", [], |row| row.get(0)).unwrap();
+            assert_eq!(note, "body");
             drop(exported);
             live.execute("UPDATE settings SET value='changed'", []).unwrap();
             Connection::open(&invalid).unwrap().execute_batch("CREATE TABLE unrelated(id INTEGER)").unwrap();
@@ -136,6 +162,8 @@ mod tests {
             assert_eq!(restored, "original");
             let encrypted: String = live.query_row("SELECT payload FROM vault_items WHERE id='record'", [], |row| row.get(0)).unwrap();
             assert_eq!(encrypted, "ciphertext");
+            let task: String = live.query_row("SELECT title FROM daily_tasks WHERE id='task'", [], |row| row.get(0)).unwrap();
+            assert_eq!(task, "today");
             assert!(backup(&current, &current).is_err());
         }
         std::fs::remove_dir_all(directory).unwrap();

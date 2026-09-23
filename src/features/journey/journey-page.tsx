@@ -1,7 +1,7 @@
 import { motion, useReducedMotion } from "motion/react";
-import { ArrowLeft, ArrowRight, BriefcaseBusiness, CheckCircle2, Compass, FolderKanban, Lightbulb, Pencil, Plus, Rocket, Sparkles, Target } from "lucide-react";
+import { ArrowRight, BriefcaseBusiness, CheckCircle2, Compass, FolderKanban, Home, Lightbulb, Pencil, Plus, Rocket, Sparkles, Target } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import { Button } from "@/components/ui/button";
 import { GoalDialog, IdeaDialog, ProjectDialog } from "@/features/journey/journey-dialogs";
@@ -16,9 +16,10 @@ const emptyDashboard: JourneyDashboard = { projects: [], ideas: [], goals: [] };
 
 export function JourneyPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [view, setView] = useState<View>("OVERVIEW");
   const [data, setData] = useState<JourneyDashboard>(emptyDashboard);
-  const [selectedProject, setSelectedProject] = useState<string | null>(null);
+  const [selectedProject, setSelectedProject] = useState<string | null>(()=>searchParams.get("project"));
   const [projectDialog, setProjectDialog] = useState<JourneyProject | "new" | null>(null);
   const [ideaDialog, setIdeaDialog] = useState<JourneyIdea | "new" | null>(null);
   const [goalDialog, setGoalDialog] = useState<JourneyGoal | "new" | null>(null);
@@ -45,7 +46,7 @@ export function JourneyPage() {
 
   return <main className="modules-screen journey-screen">
     <header className="modules-header">
-      <Button variant="ghost" onClick={() => navigate("/modules")}><ArrowLeft className="size-4" />返回模块选择</Button>
+      <div className="flex gap-2"><Button variant="ghost" onClick={() => navigate("/today")}><Home className="size-4" />今日首页</Button><Button variant="ghost" onClick={() => navigate("/modules")}>全部模块</Button></div>
       <div className="flex items-center gap-2"><span className="hidden text-xs font-semibold tracking-[.12em] text-[var(--text-tertiary)] sm:inline">MY JOURNEY</span><ThemeSwitcher /></div>
     </header>
     <div className="journey-container">

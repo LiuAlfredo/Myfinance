@@ -1,4 +1,4 @@
-import { ArrowLeft, BarChart3, ChevronLeft, ChevronRight, Eye, EyeOff, History, LockKeyhole, Plus } from "lucide-react";
+import { BarChart3, ChevronLeft, ChevronRight, Eye, EyeOff, Grid2X2, History, Home, LockKeyhole, Plus } from "lucide-react";
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ThemeSwitcher } from "@/components/theme-switcher";
@@ -76,7 +76,7 @@ export function PrivateCalendarPage() {
   return (
     <main className="modules-screen">
       <header className="modules-header">
-        <Button variant="ghost" onClick={() => navigate("/modules")}><ArrowLeft className="size-4" />返回模块选择</Button>
+        <div className="flex gap-2"><Button variant="ghost" onClick={() => navigate("/today")}><Home className="size-4" />今日首页</Button><Button variant="ghost" onClick={() => navigate("/modules")}><Grid2X2 className="size-4" />全部模块</Button></div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" onClick={() => { setPrivacyHidden((hidden) => !hidden); setHistoryOpen(false); setStatisticsYear(null); }}>
             {privacyHidden ? <Eye className="size-4" /> : <EyeOff className="size-4" />}<span className="hidden sm:inline">{privacyHidden ? "显示记录" : "隐私模式"}</span>

@@ -4,6 +4,7 @@ import {
   Pencil, Plus, Sparkles, Target, Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ItemDialog, LogDialog, MilestoneDialog } from "@/features/journey/journey-dialogs";
 import { JourneyProgress } from "@/features/journey/progress-bar";
@@ -14,12 +15,14 @@ import {
 import type {
   JourneyLog, JourneyMilestone, JourneyProject, JourneyProjectDetail, JourneyProjectItem,
 } from "@/features/journey/types";
+import { convertJourneyItem, listNotes, listTasks, type DailyTask, type KnowledgeNote } from "@/features/life/life-service";
 
 export function ProjectDetail({
   projectId, onBack, onEdit,
 }: {
   projectId: string; onBack: () => void; onEdit: (project: JourneyProject) => void;
 }) {
+  const navigate = useNavigate();
   const [detail, setDetail] = useState<JourneyProjectDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [itemDialog, setItemDialog] = useState<JourneyProjectItem | "new" | null>(null);
@@ -27,11 +30,17 @@ export function ProjectDetail({
   const [logDialog, setLogDialog] = useState<JourneyLog | "new" | null>(null);
   const [showAllLogs, setShowAllLogs] = useState(false);
   const [syncingProgress, setSyncingProgress] = useState(false);
+  const [linkedTasks, setLinkedTasks] = useState<DailyTask[]>([]);
+  const [linkedNotes, setLinkedNotes] = useState<KnowledgeNote[]>([]);
 
   const load = useCallback(async () => {
     try {
-      setDetail(await getJourneyProject(projectId));
-      setError(null);
+      const [nextDetail, tasks, notes] = await Promise.allSettled([getJourneyProject(projectId), listTasks("ALL", projectId), listNotes("ACTIVE", "", projectId)]);
+      if (nextDetail.status === "rejected") throw nextDetail.reason;
+      setDetail(nextDetail.value);
+      if (tasks.status === "fulfilled") setLinkedTasks(tasks.value);
+      if (notes.status === "fulfilled") setLinkedNotes(notes.value);
+      setError(tasks.status === "rejected" || notes.status === "rejected" ? "部分关联资料读取失败，请刷新重试；项目仍可正常操作。" : null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "项目读取失败");
     }
@@ -145,8 +154,13 @@ export function ProjectDetail({
     </motion.section>
 
     <div className="journey-detail-grid">
+      <section className="content-card"><div className="card-heading"><div><h2>关联日常任务</h2><p>项目事项可明确转成一条可执行任务。</p></div><Button size="sm" onClick={() => navigate(`/daily?project=${projectId}&new=task`)}><Plus className="size-4" />新建任务</Button></div><div className="mt-4 space-y-2">{linkedTasks.slice(0,8).map(task=><button key={task.id} className="journey-item text-left" onClick={()=>navigate(`/daily?task=${task.id}`)}><p className={task.status==="DONE"?"line-through text-[var(--text-tertiary)]":"font-medium"}>{task.title}</p><p className="mt-1 text-xs text-[var(--text-secondary)]">{task.status} · {task.plannedDay||"未安排"}</p></button>)}{!linkedTasks.length?<Empty copy="还没有关联任务。可从下方项目事项中选择转为日常任务。"/>:null}</div></section>
+      <section className="content-card"><div className="card-heading"><div><h2>关联生活资料</h2><p>保存项目相关的笔记和资料。</p></div><Button size="sm" onClick={()=>navigate(`/knowledge?project=${projectId}&new=1`)}><Plus className="size-4" />新建笔记</Button></div><div className="mt-4 space-y-2">{linkedNotes.slice(0,8).map(note=><button key={note.id} className="journey-item text-left" onClick={()=>navigate(`/knowledge?note=${note.id}`)}><p className="font-medium">{note.title}</p><p className="mt-1 truncate text-xs text-[var(--text-secondary)]">{note.tags||note.body||"空笔记"}</p></button>)}{!linkedNotes.length?<Empty copy="还没有关联资料。"/>:null}</div></section>
+    </div>
+
+    <div className="journey-detail-grid">
       <section className="content-card"><div className="card-heading"><div><h2>功能与任务</h2><p>拆解项目，并分别管理每一部分的完成度。</p></div><Button size="sm" onClick={() => setItemDialog("new")}><Plus className="size-4" />添加</Button></div>
-        <div className="mt-5 space-y-3">{items.map((item, index) => <motion.button key={item.id} type="button" className="journey-item" initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * .04 }} onClick={() => setItemDialog(item)}><div className="flex items-start justify-between gap-3"><div><p className="font-medium text-[var(--text)]">{item.title}</p><p className="mt-1 text-xs text-[var(--text-secondary)]">{itemStatusLabels[item.status]} · {item.priority === "HIGH" ? "高优先级" : item.priority === "LOW" ? "低优先级" : "中优先级"}</p></div><strong className="text-sm text-[var(--text-secondary)]">{item.progress}%</strong></div><div className="mt-3"><JourneyProgress value={item.progress} color={item.status === "BLOCKED" ? "var(--warning)" : project.accent} compact /></div>{item.description ? <p className="mt-3 text-left text-xs leading-5 text-[var(--text-tertiary)]">{item.description}</p> : null}</motion.button>)}{!items.length ? <Empty copy="还没有功能或任务，先拆解项目的第一部分。" /> : null}</div>
+        <div className="mt-5 space-y-3">{items.map((item, index) => <motion.div key={item.id} className="journey-item" initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: index * .04 }}><button type="button" className="w-full text-left" onClick={() => setItemDialog(item)}><div className="flex items-start justify-between gap-3"><div><p className="font-medium text-[var(--text)]">{item.title}</p><p className="mt-1 text-xs text-[var(--text-secondary)]">{itemStatusLabels[item.status]} · {item.priority === "HIGH" ? "高优先级" : item.priority === "LOW" ? "低优先级" : "中优先级"}</p></div><strong className="text-sm text-[var(--text-secondary)]">{item.progress}%</strong></div><div className="mt-3"><JourneyProgress value={item.progress} color={item.status === "BLOCKED" ? "var(--warning)" : project.accent} compact /></div>{item.description ? <p className="mt-3 text-left text-xs leading-5 text-[var(--text-tertiary)]">{item.description}</p> : null}</button><button className="mt-3 text-xs font-medium text-[var(--accent)]" onClick={()=>void convertJourneyItem(item.id).then(()=>load()).catch(reason=>setError(reason instanceof Error?reason.message:"转换失败"))}>{linkedTasks.some(task=>task.sourceItemId===item.id)?"已关联日常任务":"转为日常任务"}</button></motion.div>)}{!items.length ? <Empty copy="还没有功能或任务，先拆解项目的第一部分。" /> : null}</div>
       </section>
 
       <section className="content-card"><div className="card-heading"><div><h2>里程碑</h2><p>从开始到完成，逐段点亮项目路线。</p></div><Button size="sm" onClick={() => setMilestoneDialog("new")}><Plus className="size-4" />添加</Button></div>

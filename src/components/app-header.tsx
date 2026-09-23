@@ -1,4 +1,4 @@
-import { ArrowLeft, Menu, Plus, Search } from "lucide-react";
+import { Grid2X2, Home, Menu, Plus, Search } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ThemeSwitcher } from "@/components/theme-switcher";
@@ -30,10 +30,8 @@ export function AppHeader() {
         <Button aria-label="折叠侧边栏" variant="ghost" size="icon" onClick={toggleSidebar}>
           <Menu className="size-5" />
         </Button>
-        <Button variant="ghost" onClick={() => navigate("/modules")}>
-          <ArrowLeft className="size-4" />
-          <span className="hidden sm:inline">返回模块选择</span>
-        </Button>
+        <Button variant="ghost" onClick={() => navigate("/today")}><Home className="size-4" /><span className="hidden sm:inline">今日</span></Button>
+        <Button variant="ghost" onClick={() => navigate("/modules")}><Grid2X2 className="size-4" /><span className="hidden sm:inline">全部模块</span></Button>
         <h1 className="text-lg font-semibold tracking-tight text-[var(--text)]">{pageTitles[pathname] ?? "MyFinance"}</h1>
       </div>
       <div className="flex items-center gap-2">

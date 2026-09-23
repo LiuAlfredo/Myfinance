@@ -1,4 +1,4 @@
-import { ArrowLeft, KeyRound, ShieldCheck } from "lucide-react";
+import { Grid2X2, Home, KeyRound, ShieldCheck } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { ThemeSwitcher } from "@/components/theme-switcher";
@@ -56,10 +56,7 @@ export function PersonalSettingsPage() {
   return (
     <main className="modules-screen">
       <header className="modules-header">
-        <Button variant="ghost" onClick={() => navigate("/modules")}>
-          <ArrowLeft className="size-4" />
-          返回模块选择
-        </Button>
+        <div className="flex gap-2"><Button variant="ghost" onClick={() => navigate("/today")}><Home className="size-4" />今日首页</Button><Button variant="ghost" onClick={() => navigate("/modules")}><Grid2X2 className="size-4" />全部模块</Button></div>
         <div className="flex items-center gap-3">
           <span className="hidden text-sm font-medium text-[var(--text-secondary)] sm:inline">My Personal Affairs</span>
           <ThemeSwitcher />

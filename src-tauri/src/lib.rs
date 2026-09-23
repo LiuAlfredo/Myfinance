@@ -2,6 +2,7 @@ mod commands;
 mod database;
 mod database_backup;
 mod journey;
+mod life;
 mod private_calendar;
 mod password_vault;
 mod security;
@@ -38,6 +39,21 @@ pub fn run() {
             password_vault::get_vault_item,
             password_vault::save_vault_item,
             password_vault::delete_vault_item,
+            life::list_daily_tasks,
+            life::save_daily_task,
+            life::set_daily_task_status,
+            life::delete_daily_task,
+            life::convert_journey_item_to_task,
+            life::list_daily_events,
+            life::save_daily_event,
+            life::delete_daily_event,
+            life::list_knowledge_notes,
+            life::get_knowledge_note,
+            life::save_knowledge_note,
+            life::set_knowledge_note_state,
+            life::delete_knowledge_note_permanently,
+            life::set_today_project_pinned,
+            life::get_today_summary,
             commands::get_accounts,
             commands::save_account,
             commands::set_account_active,
