@@ -1,17 +1,717 @@
-import { CalendarClock, Check, Pencil, Plus, Power, Trash2, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  CalendarClock,
+  Check,
+  Pencil,
+  Plus,
+  Power,
+  Trash2,
+  X,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { EmptyState } from "@/components/empty-state";
 import { PageHero } from "@/components/page-hero";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { cancelPlanned, completePlanned, deletePlanned, deleteRecurring, getAccounts, getCategories, getPlanned, getRecurring, savePlanned, saveRecurring, setRecurringActive, toMinorUnit, type PlannedRecord, type RecurringRecord } from "@/services/finance-service";
+import {
+  cancelPlanned,
+  completePlanned,
+  deletePlanned,
+  deleteRecurring,
+  getAccounts,
+  getCategories,
+  getPlanned,
+  getRecurring,
+  savePlanned,
+  saveRecurring,
+  setRecurringActive,
+  toMinorUnit,
+  type PlannedRecord,
+  type RecurringRecord,
+} from "@/services/finance-service";
 import { formatCurrency } from "@/lib/utils";
 import type { AccountRecord, CategoryRecord } from "@/types/finance";
 import { useUiStore } from "@/stores/ui-store";
+import { useSearchParams } from "react-router-dom";
+import { SubscriptionPanel } from "@/features/life/subscription-panel";
 
 type Tab = "planned" | "recurring";
-export function PlanningPage() { const [tab,setTab]=useState<Tab>("planned"); const [planned,setPlanned]=useState<PlannedRecord[]>([]); const [recurring,setRecurring]=useState<RecurringRecord[]>([]); const [loading,setLoading]=useState(true); const [error,setError]=useState<string|null>(null); const [form,setForm]=useState<"planned"|"recurring"|null>(null); const [editingPlanned,setEditingPlanned]=useState<PlannedRecord|null>(null); const [editingRecurring,setEditingRecurring]=useState<RecurringRecord|null>(null); const load=()=>{setLoading(true);setError(null);void Promise.all([getPlanned(),getRecurring()]).then(([p,r])=>{setPlanned(p);setRecurring(r);}).catch((e:unknown)=>setError(e instanceof Error?e.message:"加载失败")).finally(()=>setLoading(false));}; useEffect(()=>{load();},[]); const refresh=()=>{setForm(null);setEditingPlanned(null);setEditingRecurring(null);load();window.dispatchEvent(new Event("finance-data-changed"));}; return <div className="page-container"><PageHero title="计划" description="管理已知支出与周期性现金流，自动联动账户和预测。" action={<Button onClick={()=>setForm(tab)}><Plus className="size-4"/>{tab==="planned"?"添加计划支出":"添加固定收支"}</Button>}/><div className="mb-4 flex gap-1 rounded-xl bg-[var(--surface-muted)] p-1 w-fit"><button className={`rounded-lg px-4 py-2 text-sm ${tab==="planned"?"bg-[var(--surface)] text-[var(--text)] shadow-sm":"text-[var(--text-secondary)]"}`} onClick={()=>setTab("planned")}>计划支出</button><button className={`rounded-lg px-4 py-2 text-sm ${tab==="recurring"?"bg-[var(--surface)] text-[var(--text)] shadow-sm":"text-[var(--text-secondary)]"}`} onClick={()=>setTab("recurring")}>固定收支</button></div>{loading?<div className="content-card p-8 text-sm text-[var(--text-secondary)]">正在加载…</div>:error?<div className="content-card flex items-center justify-between p-8 text-sm text-[var(--danger)]">{error}<Button variant="secondary" onClick={load}>重试</Button></div>:tab==="planned"?(planned.length?<div className="content-card divide-y divide-[var(--border)]">{planned.map(p=><PlannedRow key={p.id} item={p} onEdit={()=>{setEditingPlanned(p);setForm("planned");}} onRefresh={refresh}/>)}</div>:<EmptyState icon={CalendarClock} title="还没有计划支出" description="添加计划后，它会进入未来现金流预测。"/>):(recurring.length?<div className="content-card divide-y divide-[var(--border)]">{recurring.map(r=><RecurringRow key={r.id} item={r} onEdit={()=>{setEditingRecurring(r);setForm("recurring");}} onRefresh={refresh}/>)}</div>:<EmptyState icon={CalendarClock} title="还没有固定收支" description="添加工资、房租等周期性项目。"/>)}{form==="planned"&&<PlannedDialog open onOpenChange={()=>setForm(null)} record={editingPlanned} onSaved={refresh}/>} {form==="recurring"&&<RecurringDialog open onOpenChange={()=>setForm(null)} record={editingRecurring} onSaved={refresh}/>}</div>; }
-function PlannedRow({item,onEdit,onRefresh}:{item:PlannedRecord;onEdit:()=>void;onRefresh:()=>void}){const disabled=item.status!=="PLANNED";const showToast=useUiStore(s=>s.showToast);const act=(promise:Promise<void>,message:string)=>void promise.then(()=>{showToast(message);onRefresh();}).catch((e:unknown)=>showToast(e instanceof Error?e.message:"操作失败"));return <div className="flex flex-wrap items-center justify-between gap-3 py-4"><div><p className="font-medium text-[var(--text)]">{item.title}</p><p className="text-xs text-[var(--text-secondary)]">{new Date(item.plannedDate).toLocaleDateString("zh-CN")} · {item.status}{item.note?` · ${item.note}`:""}</p></div><div className="flex items-center gap-2"><strong className="text-[var(--danger)]">-{formatCurrency(item.amount/100)}</strong>{!disabled&&<><Button size="sm" onClick={()=>{if(window.confirm("完成后会创建一笔实际支出，继续吗？"))act(completePlanned(item.id),"计划已完成，实际支出已记录");}}><Check className="size-3.5"/>完成</Button><Button size="sm" variant="secondary" onClick={()=>{if(window.confirm("取消此计划？"))act(cancelPlanned(item.id),"计划已取消");}}><X className="size-3.5"/>取消</Button><button aria-label="编辑计划" onClick={onEdit}><Pencil className="size-4"/></button><button aria-label="删除计划" onClick={()=>{if(window.confirm("删除此计划？"))act(deletePlanned(item.id),"计划已删除");}}><Trash2 className="size-4 text-[var(--danger)]"/></button></>}</div></div>}
-function RecurringRow({item,onEdit,onRefresh}:{item:RecurringRecord;onEdit:()=>void;onRefresh:()=>void}){const showToast=useUiStore(s=>s.showToast);const act=(promise:Promise<void>,message:string)=>void promise.then(()=>{showToast(message);onRefresh();}).catch((e:unknown)=>showToast(e instanceof Error?e.message:"操作失败"));return <div className="flex flex-wrap items-center justify-between gap-3 py-4"><div><p className="font-medium text-[var(--text)]">{item.title}</p><p className="text-xs text-[var(--text-secondary)]">{item.frequency} · 下次 {new Date(item.nextRunDate).toLocaleDateString("zh-CN")} · {item.isActive?"启用":"已停用"}{item.note?` · ${item.note}`:""}</p></div><div className="flex items-center gap-3"><strong className={item.type==="INCOME"?"text-[var(--success)]":"text-[var(--danger)]"}>{item.type==="INCOME"?"+":"-"}{formatCurrency(item.amount/100)}</strong><button aria-label="启用或停用" onClick={()=>act(setRecurringActive(item.id,!item.isActive),item.isActive?"固定收支已停用":"固定收支已启用")}><Power className="size-4"/></button><button aria-label="编辑固定收支" onClick={onEdit}><Pencil className="size-4"/></button><button aria-label="删除固定收支" onClick={()=>{if(window.confirm("删除此固定收支？"))act(deleteRecurring(item.id),"固定收支已删除");}}><Trash2 className="size-4 text-[var(--danger)]"/></button></div></div>}
-function PlannedDialog({open,onOpenChange,record,onSaved}:{open:boolean;onOpenChange:(v:boolean)=>void;record:PlannedRecord|null;onSaved:()=>void}){const [accounts,setAccounts]=useState<AccountRecord[]>([]);const [categories,setCategories]=useState<CategoryRecord[]>([]);const [error,setError]=useState<string|null>(null);useEffect(()=>{void Promise.all([getAccounts(),getCategories("EXPENSE")]).then(([a,c])=>{setAccounts(a);setCategories(c);});},[]);return <Dialog open={open} onOpenChange={onOpenChange} title={record?"编辑计划支出":"添加计划支出"} description="保存后可完成、取消或删除计划。"><form className="space-y-3" onSubmit={e=>{e.preventDefault();const d=new FormData(e.currentTarget);void savePlanned({title:String(d.get("title")),amount:toMinorUnit(String(d.get("amount"))),currency:"CNY",plannedDate:new Date(String(d.get("date"))).getTime(),categoryId:String(d.get("categoryId"))||undefined,accountId:String(d.get("accountId")),note:String(d.get("note"))},record?.id).then(onSaved).catch((x:unknown)=>setError(x instanceof Error?x.message:"保存失败"));}}><label className="form-label">标题<input name="title" required defaultValue={record?.title??""} className="form-control"/></label><div className="grid grid-cols-2 gap-3"><label className="form-label">金额<input name="amount" required defaultValue={record?record.amount/100:""} className="form-control" inputMode="decimal"/></label><label className="form-label">日期<input name="date" required type="date" defaultValue={record?new Date(record.plannedDate).toISOString().slice(0,10):new Date().toISOString().slice(0,10)} className="form-control"/></label></div><div className="grid grid-cols-2 gap-3"><label className="form-label">分类<select name="categoryId" defaultValue={record?.categoryId??""} className="form-control"><option value="">未分类</option>{categories.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label className="form-label">账户<select name="accountId" required defaultValue={record?.accountId??accounts[0]?.id} className="form-control">{accounts.filter(a=>a.isActive).map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label></div><label className="form-label">备注<textarea name="note" defaultValue={record?.note??""} className="form-control" rows={2}/></label>{error&&<p className="text-sm text-[var(--danger)]">{error}</p>}<div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={()=>onOpenChange(false)}>取消</Button><Button type="submit">保存</Button></div></form></Dialog>}
-function RecurringDialog({open,onOpenChange,record,onSaved}:{open:boolean;onOpenChange:(v:boolean)=>void;record:RecurringRecord|null;onSaved:()=>void}){const [accounts,setAccounts]=useState<AccountRecord[]>([]);const [categories,setCategories]=useState<CategoryRecord[]>([]);const [error,setError]=useState<string|null>(null);const [type,setType]=useState(record?.type??"INCOME");useEffect(()=>{setType(record?.type??"INCOME");void Promise.all([getAccounts(),getCategories(record?.type==="EXPENSE"?"EXPENSE":"INCOME")]).then(([a,c])=>{setAccounts(a);setCategories(c);});},[record,open]);return <Dialog open={open} onOpenChange={onOpenChange} title={record?"编辑固定收支":"添加固定收支"} description="周期性项目会进入预测。"><form className="space-y-3" onSubmit={e=>{e.preventDefault();const d=new FormData(e.currentTarget);void saveRecurring({type:String(d.get("type")),accountId:String(d.get("accountId")),categoryId:String(d.get("categoryId"))||undefined,amount:toMinorUnit(String(d.get("amount"))),currency:"CNY",title:String(d.get("title")),frequency:String(d.get("frequency")),startDate:new Date(String(d.get("startDate"))).getTime(),endDate:String(d.get("endDate"))?new Date(String(d.get("endDate"))).getTime():undefined,note:String(d.get("note")??"")},record?.id).then(onSaved).catch((x:unknown)=>setError(x instanceof Error?x.message:"保存失败"));}}><label className="form-label">名称<input name="title" required defaultValue={record?.title??""} className="form-control"/></label><div className="grid grid-cols-2 gap-3"><label className="form-label">类型<select name="type" value={type} onChange={e=>{setType(e.target.value);void getCategories(e.target.value as "INCOME"|"EXPENSE").then(setCategories);}} className="form-control"><option value="INCOME">收入</option><option value="EXPENSE">支出</option></select></label><label className="form-label">周期<select name="frequency" defaultValue={record?.frequency??"MONTHLY"} className="form-control"><option value="DAILY">每日</option><option value="WEEKLY">每周</option><option value="MONTHLY">每月</option><option value="YEARLY">每年</option></select></label></div><div className="grid grid-cols-2 gap-3"><label className="form-label">分类<select name="categoryId" defaultValue={record?.categoryId??""} className="form-control"><option value="">未分类</option>{categories.filter(c=>c.isActive!==false).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label><label className="form-label">账户<select name="accountId" required defaultValue={record?.accountId??accounts[0]?.id} className="form-control">{accounts.filter(a=>a.isActive).map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label></div><label className="form-label">金额<input name="amount" required defaultValue={record?record.amount/100:""} className="form-control" inputMode="decimal"/></label><div className="grid grid-cols-2 gap-3"><label className="form-label">开始日期<input name="startDate" type="date" required defaultValue={record?new Date(record.startDate).toISOString().slice(0,10):new Date().toISOString().slice(0,10)} className="form-control"/></label><label className="form-label">结束日期<input name="endDate" type="date" defaultValue={record?.endDate?new Date(record.endDate).toISOString().slice(0,10):""} className="form-control"/></label></div><label className="form-label">备注<textarea name="note" defaultValue={record?.note??""} className="form-control" rows={2}/></label>{error&&<p className="text-sm text-[var(--danger)]">{error}</p>}<div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={()=>onOpenChange(false)}>取消</Button><Button type="submit">保存</Button></div></form></Dialog>}
+export function PlanningPage() {
+  const [params, setParams] = useSearchParams();
+  const [tab, setTab] = useState<Tab>("planned");
+  const [planned, setPlanned] = useState<PlannedRecord[]>([]);
+  const [recurring, setRecurring] = useState<RecurringRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [form, setForm] = useState<"planned" | "recurring" | null>(null);
+  const [editingPlanned, setEditingPlanned] = useState<PlannedRecord | null>(
+    null,
+  );
+  const [editingRecurring, setEditingRecurring] =
+    useState<RecurringRecord | null>(null);
+  const load = () => {
+    setLoading(true);
+    setError(null);
+    void Promise.all([getPlanned(), getRecurring()])
+      .then(([p, r]) => {
+        setPlanned(p);
+        setRecurring(r);
+      })
+      .catch((e: unknown) =>
+        setError(e instanceof Error ? e.message : "加载失败"),
+      )
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => {
+    load();
+  }, []);
+  useEffect(() => {
+    const target = params.get("planned");
+    const row = planned.find((p) => p.id === target);
+    if (row) {
+      setTab("planned");
+      setEditingPlanned(row);
+      setForm("planned");
+      setParams({}, { replace: true });
+    }
+  }, [planned, params, setParams]);
+  const refresh = () => {
+    setForm(null);
+    setEditingPlanned(null);
+    setEditingRecurring(null);
+    load();
+    window.dispatchEvent(new Event("finance-data-changed"));
+  };
+  return (
+    <div className="page-container">
+      <PageHero
+        title="计划"
+        description="管理已知支出与周期性现金流，自动联动账户和预测。"
+        action={
+          <Button onClick={() => setForm(tab)}>
+            <Plus className="size-4" />
+            {tab === "planned" ? "添加计划支出" : "添加固定收支"}
+          </Button>
+        }
+      />
+      <div className="mb-4 flex gap-1 rounded-xl bg-[var(--surface-muted)] p-1 w-fit">
+        <button
+          className={`rounded-lg px-4 py-2 text-sm ${tab === "planned" ? "bg-[var(--surface)] text-[var(--text)] shadow-sm" : "text-[var(--text-secondary)]"}`}
+          onClick={() => setTab("planned")}
+        >
+          计划支出
+        </button>
+        <button
+          className={`rounded-lg px-4 py-2 text-sm ${tab === "recurring" ? "bg-[var(--surface)] text-[var(--text)] shadow-sm" : "text-[var(--text-secondary)]"}`}
+          onClick={() => setTab("recurring")}
+        >
+          固定收支
+        </button>
+      </div>
+      {loading ? (
+        <div className="content-card p-8 text-sm text-[var(--text-secondary)]">
+          正在加载…
+        </div>
+      ) : error ? (
+        <div className="content-card flex items-center justify-between p-8 text-sm text-[var(--danger)]">
+          {error}
+          <Button variant="secondary" onClick={load}>
+            重试
+          </Button>
+        </div>
+      ) : tab === "planned" ? (
+        planned.length ? (
+          <div className="content-card divide-y divide-[var(--border)]">
+            {planned.map((p) => (
+              <PlannedRow
+                key={p.id}
+                item={p}
+                onEdit={() => {
+                  setEditingPlanned(p);
+                  setForm("planned");
+                }}
+                onRefresh={refresh}
+              />
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            icon={CalendarClock}
+            title="还没有计划支出"
+            description="添加计划后，它会进入未来现金流预测。"
+          />
+        )
+      ) : recurring.length ? (
+        <div className="content-card divide-y divide-[var(--border)]">
+          {recurring.map((r) => (
+            <RecurringRow
+              key={r.id}
+              item={r}
+              onEdit={() => {
+                setEditingRecurring(r);
+                setForm("recurring");
+              }}
+              onRefresh={refresh}
+            />
+          ))}
+        </div>
+      ) : (
+        <EmptyState
+          icon={CalendarClock}
+          title="还没有固定收支"
+          description="添加工资、房租等周期性项目。"
+        />
+      )}
+      {form === "planned" && (
+        <PlannedDialog
+          open
+          onOpenChange={() => setForm(null)}
+          record={editingPlanned}
+          onSaved={refresh}
+        />
+      )}{" "}
+      {form === "recurring" && (
+        <RecurringDialog
+          open
+          onOpenChange={() => setForm(null)}
+          record={editingRecurring}
+          onSaved={refresh}
+        />
+      )}
+      <SubscriptionPanel />
+    </div>
+  );
+}
+function PlannedRow({
+  item,
+  onEdit,
+  onRefresh,
+}: {
+  item: PlannedRecord;
+  onEdit: () => void;
+  onRefresh: () => void;
+}) {
+  const disabled = item.status !== "PLANNED";
+  const showToast = useUiStore((s) => s.showToast);
+  const act = (promise: Promise<void>, message: string) =>
+    void promise
+      .then(() => {
+        showToast(message);
+        onRefresh();
+      })
+      .catch((e: unknown) =>
+        showToast(e instanceof Error ? e.message : "操作失败"),
+      );
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 py-4">
+      <div>
+        <p className="font-medium text-[var(--text)]">{item.title}</p>
+        <p className="text-xs text-[var(--text-secondary)]">
+          {new Date(item.plannedDate).toLocaleDateString("zh-CN")} ·{" "}
+          {item.status}
+          {item.note ? ` · ${item.note}` : ""}
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        <strong className="text-[var(--danger)]">
+          -{formatCurrency(item.amount / 100)}
+        </strong>
+        {!disabled && (
+          <>
+            <Button
+              size="sm"
+              onClick={() => {
+                if (window.confirm("完成后会创建一笔实际支出，继续吗？"))
+                  act(completePlanned(item.id), "计划已完成，实际支出已记录");
+              }}
+            >
+              <Check className="size-3.5" />
+              完成
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                if (window.confirm("取消此计划？"))
+                  act(cancelPlanned(item.id), "计划已取消");
+              }}
+            >
+              <X className="size-3.5" />
+              取消
+            </Button>
+            <button aria-label="编辑计划" onClick={onEdit}>
+              <Pencil className="size-4" />
+            </button>
+            <button
+              aria-label="删除计划"
+              onClick={() => {
+                if (window.confirm("删除此计划？"))
+                  act(deletePlanned(item.id), "计划已删除");
+              }}
+            >
+              <Trash2 className="size-4 text-[var(--danger)]" />
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+function RecurringRow({
+  item,
+  onEdit,
+  onRefresh,
+}: {
+  item: RecurringRecord;
+  onEdit: () => void;
+  onRefresh: () => void;
+}) {
+  const showToast = useUiStore((s) => s.showToast);
+  const act = (promise: Promise<void>, message: string) =>
+    void promise
+      .then(() => {
+        showToast(message);
+        onRefresh();
+      })
+      .catch((e: unknown) =>
+        showToast(e instanceof Error ? e.message : "操作失败"),
+      );
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 py-4">
+      <div>
+        <p className="font-medium text-[var(--text)]">{item.title}</p>
+        <p className="text-xs text-[var(--text-secondary)]">
+          {item.frequency} · 下次{" "}
+          {new Date(item.nextRunDate).toLocaleDateString("zh-CN")} ·{" "}
+          {item.isActive ? "启用" : "已停用"}
+          {item.note ? ` · ${item.note}` : ""}
+        </p>
+      </div>
+      <div className="flex items-center gap-3">
+        <strong
+          className={
+            item.type === "INCOME"
+              ? "text-[var(--success)]"
+              : "text-[var(--danger)]"
+          }
+        >
+          {item.type === "INCOME" ? "+" : "-"}
+          {formatCurrency(item.amount / 100)}
+        </strong>
+        <button
+          aria-label="启用或停用"
+          onClick={() =>
+            act(
+              setRecurringActive(item.id, !item.isActive),
+              item.isActive ? "固定收支已停用" : "固定收支已启用",
+            )
+          }
+        >
+          <Power className="size-4" />
+        </button>
+        <button aria-label="编辑固定收支" onClick={onEdit}>
+          <Pencil className="size-4" />
+        </button>
+        <button
+          aria-label="删除固定收支"
+          onClick={() => {
+            if (window.confirm("删除此固定收支？"))
+              act(deleteRecurring(item.id), "固定收支已删除");
+          }}
+        >
+          <Trash2 className="size-4 text-[var(--danger)]" />
+        </button>
+      </div>
+    </div>
+  );
+}
+function PlannedDialog({
+  open,
+  onOpenChange,
+  record,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  record: PlannedRecord | null;
+  onSaved: () => void;
+}) {
+  const [accounts, setAccounts] = useState<AccountRecord[]>([]);
+  const [categories, setCategories] = useState<CategoryRecord[]>([]);
+  const [busy, setBusy] = useState(false),
+    submitting = useRef(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void Promise.all([getAccounts(), getCategories("EXPENSE")]).then(
+      ([a, c]) => {
+        setAccounts(a);
+        setCategories(c);
+      },
+    );
+  }, []);
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(value) => {
+        if (!busy) onOpenChange(value);
+      }}
+      title={record ? "编辑计划支出" : "添加计划支出"}
+      description="保存后可完成、取消或删除计划。"
+    >
+      <form
+        className="space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (submitting.current) return;
+          const d = new FormData(e.currentTarget),
+            account = accounts.find((a) => a.id === String(d.get("accountId")));
+          if (!account) {
+            setError("请选择有效账户");
+            return;
+          }
+          submitting.current = true;
+          setBusy(true);
+          void savePlanned(
+            {
+              title: String(d.get("title")),
+              amount: toMinorUnit(String(d.get("amount"))),
+              currency: account.currency,
+              plannedDate: new Date(String(d.get("date"))).getTime(),
+              categoryId: String(d.get("categoryId")) || undefined,
+              accountId: String(d.get("accountId")),
+              note: String(d.get("note")),
+            },
+            record?.id,
+          )
+            .then(onSaved)
+            .catch((x: unknown) =>
+              setError(x instanceof Error ? x.message : "保存失败"),
+            )
+            .finally(() => {
+              submitting.current = false;
+              setBusy(false);
+            });
+        }}
+      >
+        <label className="form-label">
+          标题
+          <input
+            name="title"
+            required
+            defaultValue={record?.title ?? ""}
+            className="form-control"
+          />
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="form-label">
+            金额
+            <input
+              name="amount"
+              required
+              defaultValue={record ? record.amount / 100 : ""}
+              className="form-control"
+              inputMode="decimal"
+            />
+          </label>
+          <label className="form-label">
+            日期
+            <input
+              name="date"
+              required
+              type="date"
+              defaultValue={
+                record
+                  ? new Date(record.plannedDate).toISOString().slice(0, 10)
+                  : new Date().toISOString().slice(0, 10)
+              }
+              className="form-control"
+            />
+          </label>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="form-label">
+            分类
+            <select
+              name="categoryId"
+              defaultValue={record?.categoryId ?? ""}
+              className="form-control"
+            >
+              <option value="">未分类</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="form-label">
+            账户
+            <select
+              name="accountId"
+              required
+              defaultValue={record?.accountId ?? accounts[0]?.id}
+              className="form-control"
+            >
+              {accounts
+                .filter((a) => a.isActive)
+                .map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+        </div>
+        <label className="form-label">
+          备注
+          <textarea
+            name="note"
+            defaultValue={record?.note ?? ""}
+            className="form-control"
+            rows={2}
+          />
+        </label>
+        {error && <p className="text-sm text-[var(--danger)]">{error}</p>}
+        <div className="flex justify-end gap-2">
+          {record?.status === "PLANNED" && (
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => {
+                if (
+                  submitting.current ||
+                  !confirm(
+                    "按已保存的计划金额创建实际支出并完成计划？当前表单的未保存修改不会入账。",
+                  )
+                )
+                  return;
+                submitting.current = true;
+                setBusy(true);
+                void completePlanned(record.id)
+                  .then(onSaved)
+                  .catch((e) => setError(e.message))
+                  .finally(() => {
+                    submitting.current = false;
+                    setBusy(false);
+                  });
+              }}
+            >
+              完成并入账
+            </Button>
+          )}
+          <Button
+            disabled={busy}
+            type="button"
+            variant="secondary"
+            onClick={() => onOpenChange(false)}
+          >
+            取消
+          </Button>
+          <Button type="submit" disabled={busy}>
+            {busy ? "处理中…" : "保存"}
+          </Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+function RecurringDialog({
+  open,
+  onOpenChange,
+  record,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  record: RecurringRecord | null;
+  onSaved: () => void;
+}) {
+  const [accounts, setAccounts] = useState<AccountRecord[]>([]);
+  const [categories, setCategories] = useState<CategoryRecord[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [type, setType] = useState(record?.type ?? "INCOME");
+  useEffect(() => {
+    setType(record?.type ?? "INCOME");
+    void Promise.all([
+      getAccounts(),
+      getCategories(record?.type === "EXPENSE" ? "EXPENSE" : "INCOME"),
+    ]).then(([a, c]) => {
+      setAccounts(a);
+      setCategories(c);
+    });
+  }, [record, open]);
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={record ? "编辑固定收支" : "添加固定收支"}
+      description="周期性项目会进入预测。"
+    >
+      <form
+        className="space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const d = new FormData(e.currentTarget);
+          void saveRecurring(
+            {
+              type: String(d.get("type")),
+              accountId: String(d.get("accountId")),
+              categoryId: String(d.get("categoryId")) || undefined,
+              amount: toMinorUnit(String(d.get("amount"))),
+              currency: "CNY",
+              title: String(d.get("title")),
+              frequency: String(d.get("frequency")),
+              startDate: new Date(String(d.get("startDate"))).getTime(),
+              endDate: String(d.get("endDate"))
+                ? new Date(String(d.get("endDate"))).getTime()
+                : undefined,
+              note: String(d.get("note") ?? ""),
+            },
+            record?.id,
+          )
+            .then(onSaved)
+            .catch((x: unknown) =>
+              setError(x instanceof Error ? x.message : "保存失败"),
+            );
+        }}
+      >
+        <label className="form-label">
+          名称
+          <input
+            name="title"
+            required
+            defaultValue={record?.title ?? ""}
+            className="form-control"
+          />
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="form-label">
+            类型
+            <select
+              name="type"
+              value={type}
+              onChange={(e) => {
+                setType(e.target.value);
+                void getCategories(e.target.value as "INCOME" | "EXPENSE").then(
+                  setCategories,
+                );
+              }}
+              className="form-control"
+            >
+              <option value="INCOME">收入</option>
+              <option value="EXPENSE">支出</option>
+            </select>
+          </label>
+          <label className="form-label">
+            周期
+            <select
+              name="frequency"
+              defaultValue={record?.frequency ?? "MONTHLY"}
+              className="form-control"
+            >
+              <option value="DAILY">每日</option>
+              <option value="WEEKLY">每周</option>
+              <option value="MONTHLY">每月</option>
+              <option value="YEARLY">每年</option>
+            </select>
+          </label>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="form-label">
+            分类
+            <select
+              name="categoryId"
+              defaultValue={record?.categoryId ?? ""}
+              className="form-control"
+            >
+              <option value="">未分类</option>
+              {categories
+                .filter((c) => c.isActive !== false)
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <label className="form-label">
+            账户
+            <select
+              name="accountId"
+              required
+              defaultValue={record?.accountId ?? accounts[0]?.id}
+              className="form-control"
+            >
+              {accounts
+                .filter((a) => a.isActive)
+                .map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+        </div>
+        <label className="form-label">
+          金额
+          <input
+            name="amount"
+            required
+            defaultValue={record ? record.amount / 100 : ""}
+            className="form-control"
+            inputMode="decimal"
+          />
+        </label>
+        <div className="grid grid-cols-2 gap-3">
+          <label className="form-label">
+            开始日期
+            <input
+              name="startDate"
+              type="date"
+              required
+              defaultValue={
+                record
+                  ? new Date(record.startDate).toISOString().slice(0, 10)
+                  : new Date().toISOString().slice(0, 10)
+              }
+              className="form-control"
+            />
+          </label>
+          <label className="form-label">
+            结束日期
+            <input
+              name="endDate"
+              type="date"
+              defaultValue={
+                record?.endDate
+                  ? new Date(record.endDate).toISOString().slice(0, 10)
+                  : ""
+              }
+              className="form-control"
+            />
+          </label>
+        </div>
+        <label className="form-label">
+          备注
+          <textarea
+            name="note"
+            defaultValue={record?.note ?? ""}
+            className="form-control"
+            rows={2}
+          />
+        </label>
+        {error && <p className="text-sm text-[var(--danger)]">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => onOpenChange(false)}
+          >
+            取消
+          </Button>
+          <Button type="submit">保存</Button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}

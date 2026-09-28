@@ -1,11 +1,13 @@
+mod backup_management;
 mod commands;
 mod database;
 mod database_backup;
 mod journey;
 mod life;
-mod private_calendar;
 mod password_vault;
+mod private_calendar;
 mod security;
+mod workspace_search;
 
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -24,10 +26,30 @@ fn get_app_info() -> AppInfo {
 
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            database::initialize(app.handle())
+                .map_err(|e| format!("数据库升级失败，原数据保留：{e}"))?;
+            Ok(())
+        })
         .manage(security::SecurityState::new())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             get_app_info,
+            workspace_search::search_workspace,
+            life::routines::list_task_routines,
+            life::routines::save_task_routine,
+            life::routines::generate_routine_tasks,
+            life::routines::list_routine_history,
+            life::routines::skip_routine_occurrence,
+            life::subscriptions::list_subscriptions,
+            life::subscriptions::save_subscription,
+            life::subscriptions::pay_subscription,
+            life::subscriptions::list_subscription_payments,
+            backup_management::get_backup_status,
+            backup_management::open_backup_directory,
+            backup_management::save_backup_config,
+            backup_management::run_automatic_backup,
+            backup_management::preview_database_backup,
             security::verify_app_password,
             security::app_password_setup_required,
             security::setup_app_password,
@@ -39,21 +61,31 @@ pub fn run() {
             password_vault::get_vault_item,
             password_vault::save_vault_item,
             password_vault::delete_vault_item,
-            life::list_daily_tasks,
-            life::save_daily_task,
-            life::set_daily_task_status,
-            life::delete_daily_task,
-            life::convert_journey_item_to_task,
-            life::list_daily_events,
-            life::save_daily_event,
-            life::delete_daily_event,
-            life::list_knowledge_notes,
-            life::get_knowledge_note,
-            life::save_knowledge_note,
-            life::set_knowledge_note_state,
-            life::delete_knowledge_note_permanently,
-            life::set_today_project_pinned,
-            life::get_today_summary,
+            life::tasks::list_daily_tasks,
+            life::tasks::save_daily_task,
+            life::tasks::set_daily_task_status,
+            life::tasks::delete_daily_task,
+            life::tasks::convert_journey_item_to_task,
+            life::events::list_daily_events,
+            life::events::get_daily_event,
+            life::events::save_daily_event,
+            life::events::delete_daily_event,
+            life::notes::list_knowledge_notes,
+            life::notes::get_knowledge_note,
+            life::notes::save_knowledge_note,
+            life::note_resources::stage_note_draft,
+            life::note_resources::list_note_resources,
+            life::note_resources::discard_note_draft,
+            life::note_resources::restore_note_version,
+            life::note_resources::import_note_attachment,
+            life::note_resources::export_note_attachment,
+            life::note_resources::delete_note_attachment,
+            life::notes::set_knowledge_note_state,
+            life::notes::delete_knowledge_note_permanently,
+            life::today::set_today_project_pinned,
+            life::today::get_today_summary,
+            life::today::get_today_section,
+            life::today::reorder_today_projects,
             commands::get_accounts,
             commands::save_account,
             commands::set_account_active,

@@ -66,7 +66,7 @@ function databaseError(reason: unknown): Error {
 }
 export async function backupDatabase(destination: string): Promise<void> {
   if (!isTauri()) throw new Error("SQLite 备份需要在桌面应用中执行");
-  try { await invoke("backup_database", { destination }); }
+  try { await flushAllNotes(); await invoke("backup_database", { destination }); }
   catch (reason) { throw databaseError(reason); }
 }
 export async function restoreDatabase(source: string): Promise<void> {

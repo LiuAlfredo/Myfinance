@@ -22,7 +22,6 @@ export function AppHeader() {
   const navigate = useNavigate();
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
   const setNewTransactionOpen = useUiStore((state) => state.setNewTransactionOpen);
-  const setCommandPaletteOpen = useUiStore((state) => state.setCommandPaletteOpen);
 
   return (
     <header className="flex h-16 shrink-0 items-center justify-between border-b border-[var(--border)] bg-[color:var(--surface)/.72] px-4 backdrop-blur-xl md:px-7">
@@ -35,7 +34,7 @@ export function AppHeader() {
         <h1 className="text-lg font-semibold tracking-tight text-[var(--text)]">{pageTitles[pathname] ?? "MyFinance"}</h1>
       </div>
       <div className="flex items-center gap-2">
-        <Button className="hidden sm:inline-flex" variant="secondary" onClick={() => setCommandPaletteOpen(true)}>
+        <Button className="hidden sm:inline-flex" variant="secondary" onClick={() => navigate("/search")}>
           <Search className="size-4" />
           搜索 <kbd className="ml-2 rounded bg-[var(--surface)] px-1.5 py-0.5 text-[10px] text-[var(--text-tertiary)]">Ctrl K</kbd>
         </Button>

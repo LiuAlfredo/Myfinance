@@ -1,6 +1,6 @@
 [package]
 name = "myfinance"
-version = "0.1.0"
+version = "0.2.0"
 description = "A modern local-first personal finance desktop application"
 authors = ["MyFinance"]
 edition = "2021"
@@ -26,3 +26,4 @@ hmac = "0.12"
 rand = "0.8"
 sha2 = "0.10"
 zeroize = "1"
+chrono = "0.4.45"

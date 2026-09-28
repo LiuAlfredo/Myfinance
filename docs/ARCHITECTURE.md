@@ -9,7 +9,7 @@ MyFinance 使用模块化、分层和可扩展架构。
 当前重点：
 
 ```text
-Finance
+Finance / Journey / Tasks / Notes / Calendar / Security
 ```
 
 未来可以扩展：
@@ -45,13 +45,18 @@ AI
 │          src-tauri/                  │
 ├──────────────────────────────────────┤
 │          Database Layer              │
-│          SQLite + Drizzle            │
+│       SQLite + Rust rusqlite         │
 └──────────────────────────────────────┘
 ```
 
 ---
 
 # 3. Frontend Architecture
+
+实际持久化由 Rust `rusqlite` 管理，React 通过 Tauri 命令访问数据库。启动与恢复时按版本执行事务迁移。
+任务、日程、笔记、首页、重复规则与订阅后端位于 `src-tauri/src/life/`。
+普通笔记草稿与附件保存在同一数据库；附件使用 BLOB 与 SHA256，完整 SQLite 快照同时包含正文、草稿、历史和附件。
+普通财务与资料未加密；私密日历和密码库保持各自的加密与解锁边界。全局搜索仅查询普通任务、项目和笔记。
 
 推荐结构：
 

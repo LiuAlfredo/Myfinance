@@ -1,0 +1,44 @@
+name: Windows checks and installer
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test
+      - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+      - run: pnpm tauri build --bundles nsis
+      - name: Record build identity and checksums
+        shell: pwsh
+        run: |
+          $package = Get-Content package.json -Raw | ConvertFrom-Json
+          $manifest = @{ version = $package.version; commit = '${{ github.sha }}'; files = @() }
+          Get-ChildItem src-tauri/target/release/bundle/nsis -Filter *.exe | ForEach-Object {
+            $hash = Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256
+            $manifest.files += @{ name = $_.Name; sha256 = $hash.Hash }
+          }
+          $manifest | ConvertTo-Json -Depth 5 | Set-Content src-tauri/target/release/bundle/nsis/build-manifest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer-${{ github.sha }}
+          path: src-tauri/target/release/bundle/nsis/*
+          if-no-files-found: error

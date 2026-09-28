@@ -15,11 +15,81 @@ pub fn path(app: &tauri::AppHandle) -> Result<PathBuf> {
 pub fn connect(app: &tauri::AppHandle) -> Result<Connection> {
     let conn = Connection::open(path(app)?)?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
-    migrate(&conn)?;
+    conn.busy_timeout(std::time::Duration::from_secs(5))?;
     Ok(conn)
 }
 
-fn migrate(conn: &Connection) -> Result<()> {
+pub fn initialize(app: &tauri::AppHandle) -> Result<()> {
+    let conn = connect(app)?;
+    let version: i64 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(version),0) FROM schema_migrations",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    let populated: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='accounts')",
+        [],
+        |r| r.get(0),
+    )?;
+    if populated && version < 7 {
+        let source = path(app)?;
+        let destination = source.with_extension(format!("pre-upgrade-{}-{}.sqlite3", now(), id()));
+        crate::database_backup::backup(&source, &destination).map_err(|e| {
+            rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e)))
+        })?;
+    }
+    migrate(&conn)
+}
+
+pub fn migrate(conn: &Connection) -> Result<()> {
+    conn.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY,applied_at INTEGER NOT NULL);")?;
+    let latest: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(version),0) FROM schema_migrations",
+        [],
+        |r| r.get(0),
+    )?;
+    if latest > 7 {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+    let tx = conn.unchecked_transaction()?;
+    let initial: bool = tx.query_row(
+        "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=1)",
+        [],
+        |r| r.get(0),
+    )?;
+    if !initial {
+        legacy_baseline(&tx)?;
+        tx.execute("INSERT INTO schema_migrations VALUES(1,?1)", [now()])?;
+    }
+    for (version, sql) in [
+        (2, include_str!("../migrations/002_private_calendar.sql")),
+        (3, include_str!("../migrations/003_journey.sql")),
+        (4, include_str!("../migrations/004_password_vault.sql")),
+        (5, include_str!("../migrations/005_daily_knowledge.sql")),
+        (
+            6,
+            include_str!("../migrations/006_workspace_reliability.sql"),
+        ),
+        (
+            7,
+            include_str!("../migrations/007_routines_subscriptions.sql"),
+        ),
+    ] {
+        let applied: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=?1)",
+            [version],
+            |r| r.get(0),
+        )?;
+        if !applied {
+            tx.execute_batch(sql)?;
+        }
+    }
+    tx.commit()
+}
+
+fn legacy_baseline(conn: &Connection) -> Result<()> {
     conn.execute_batch("PRAGMA journal_mode = WAL;
     CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, name TEXT NOT NULL, institution TEXT NOT NULL DEFAULT '', type TEXT NOT NULL, currency TEXT NOT NULL DEFAULT 'CNY', initial_balance INTEGER NOT NULL DEFAULT 0, is_active INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
@@ -64,10 +134,6 @@ fn migrate(conn: &Connection) -> Result<()> {
             [],
         )?;
     }
-    conn.execute_batch(include_str!("../migrations/002_private_calendar.sql"))?;
-    conn.execute_batch(include_str!("../migrations/003_journey.sql"))?;
-    conn.execute_batch(include_str!("../migrations/004_password_vault.sql"))?;
-    conn.execute_batch(include_str!("../migrations/005_daily_knowledge.sql"))?;
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM categories", [], |r| r.get(0))?;
     if count == 0 {
         let now = now();
@@ -101,4 +167,71 @@ pub fn now() -> i64 {
 }
 pub fn id() -> String {
     uuid::Uuid::new_v4().to_string()
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use super::*;
+    #[test]
+    fn versioned_upgrade_is_repeatable_and_preserves_records() {
+        let c = Connection::open_in_memory().unwrap();
+        legacy_baseline(&c).unwrap();
+        c.execute_batch(include_str!("../migrations/002_private_calendar.sql"))
+            .unwrap();
+        c.execute_batch(include_str!("../migrations/003_journey.sql"))
+            .unwrap();
+        c.execute_batch(include_str!("../migrations/004_password_vault.sql"))
+            .unwrap();
+        c.execute_batch(include_str!("../migrations/005_daily_knowledge.sql"))
+            .unwrap();
+        c.execute("INSERT INTO knowledge_notes(id,title,body,created_at,updated_at)VALUES('n','old','retained',1,1)",[]).unwrap();
+        migrate(&c).unwrap();
+        migrate(&c).unwrap();
+        assert_eq!(
+            c.query_row("SELECT body FROM knowledge_notes WHERE id='n'", [], |r| {
+                r.get::<_, String>(0)
+            })
+            .unwrap(),
+            "retained"
+        );
+        assert_eq!(
+            c.query_row("SELECT COUNT(*) FROM schema_migrations", [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            7
+        );
+    }
+    #[test]
+    fn failed_upgrade_rolls_back_all_new_schema_changes() {
+        let c = Connection::open_in_memory().unwrap();
+        migrate(&c).unwrap();
+        c.execute_batch("DELETE FROM schema_migrations WHERE version=7;DROP TRIGGER protect_subscription_payment_transaction;DROP TABLE subscription_payments;DROP TABLE subscriptions;DROP TABLE routine_occurrences;DROP TABLE task_routines;CREATE TABLE subscriptions(unrelated TEXT);").unwrap();
+        assert!(migrate(&c).is_err());
+        assert_eq!(
+            c.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name='task_routines'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
+        assert_eq!(
+            c.query_row(
+                "SELECT COUNT(*) FROM schema_migrations WHERE version=7",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
+    }
+    #[test]
+    fn refuses_newer_database_version() {
+        let c = Connection::open_in_memory().unwrap();
+        migrate(&c).unwrap();
+        c.execute("INSERT INTO schema_migrations VALUES(8,0)", [])
+            .unwrap();
+        assert!(migrate(&c).is_err());
+    }
 }
