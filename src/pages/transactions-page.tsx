@@ -1,70 +1,34 @@
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowRightLeft, Pencil, Plus, Trash2 } from "lucide-react";
 import { useSearchParams } from "react-router-dom";
-import { Plus } from "lucide-react";
-import { useEffect, useState } from "react";
 import { PageHero } from "@/components/page-hero";
-import { RecentTransactions } from "@/components/dashboard/recent-transactions";
 import { Button } from "@/components/ui/button";
-import { getTransactions } from "@/services/finance-service";
-import type { TransactionRecord } from "@/types/finance";
-import { useUiStore } from "@/stores/ui-store";
+import { Dialog } from "@/components/ui/dialog";
+import { TransactionDialog } from "@/features/finance/transaction-dialog";
+import { formatCurrency } from "@/lib/utils";
+import { createTransfer, deleteTransaction, deleteTransfer, getAccounts, getTransactionPage, getTransactions, getTransfers, localDateInput, toMinorUnit, type TransferRecord } from "@/services/finance-service";
+import type { AccountRecord, TransactionRecord } from "@/types/finance";
 
+const PAGE_SIZE = 50;
 export function TransactionsPage() {
   const [params, setParams] = useSearchParams();
-  const target = params.get("transaction");
-  const setNewTransactionOpen = useUiStore(
-    (state) => state.setNewTransactionOpen,
-  );
-  const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const load = () => {
-    setLoading(true);
-    void getTransactions()
-      .then(setTransactions)
-      .finally(() => setLoading(false));
-  };
-  useEffect(() => {
-    load();
-    window.addEventListener("finance-data-changed", load);
-    return () => window.removeEventListener("finance-data-changed", load);
-  }, []);
-  return (
-    <div className="page-container">
-      <PageHero
-        title="交易"
-        description="收入、支出、转账与余额调整统一记录，来源账户清晰可追溯。"
-        action={
-          <Button onClick={() => setNewTransactionOpen(true)}>
-            <Plus className="size-4" />
-            新建交易
-          </Button>
-        }
-      />
-      {loading ? (
-        <div className="content-card p-8 text-sm text-[var(--text-secondary)]">
-          正在加载交易…
-        </div>
-      ) : transactions.length ? (
-        <>
-          <p>
-            {target && (
-              <Button variant="ghost" onClick={() => setParams({})}>
-                查看全部交易
-              </Button>
-            )}
-          </p>
-          <RecentTransactions
-            transactions={
-              target
-                ? transactions.filter((t) => t.id === target)
-                : transactions
-            }
-          />
-        </>
-      ) : (
-        <div className="content-card p-10 text-center text-sm text-[var(--text-secondary)]">
-          还没有交易，记录第一笔收入或支出。
-        </div>
-      )}
-    </div>
-  );
+  const [transactions, setTransactions] = useState<TransactionRecord[]>([]), [transfers, setTransfers] = useState<TransferRecord[]>([]);
+  const [editing, setEditing] = useState<TransactionRecord | null | undefined>(undefined), [transferOpen, setTransferOpen] = useState(false), [hasMore, setHasMore] = useState(false), [loading, setLoading] = useState(true), [error, setError] = useState("");
+  const target=params.get("transaction");
+  const load = useCallback(() => { setLoading(true); void Promise.all([target?getTransactions():getTransactionPage(0,PAGE_SIZE), getTransfers()]).then(([rows, nextTransfers]) => { setTransactions(rows); setHasMore(!target&&rows.length===PAGE_SIZE); setTransfers(nextTransfers); setError(""); }).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "加载交易失败")).finally(() => setLoading(false)); },[target]);
+  useEffect(() => { load(); window.addEventListener("finance-data-changed", load); return () => window.removeEventListener("finance-data-changed", load); }, [load]);
+  const filtered = useMemo(() => target ? transactions.filter((row) => row.id === target) : transactions, [target, transactions]);
+  const changed = () => { setEditing(undefined); setTransferOpen(false); window.dispatchEvent(new Event("finance-data-changed")); };
+  return <div className="page-container"><PageHero title="交易" description="收入、支出、转账与余额调整统一记录，来源账户清晰可追溯。" action={<div className="flex gap-2"><Button variant="secondary" onClick={() => setTransferOpen(true)}><ArrowRightLeft className="size-4"/>转账</Button><Button onClick={() => setEditing(null)}><Plus className="size-4"/>新建交易</Button></div>} />
+    {error && <div role="alert" className="content-card mb-4 flex justify-between text-[var(--danger)]">{error}<Button variant="secondary" onClick={load}>重试</Button></div>}{target && <Button variant="ghost" onClick={() => setParams({})}>查看全部交易</Button>}
+    {loading ? <div className="content-card p-8">正在加载交易…</div> : <div className="content-card divide-y divide-[var(--border)]">{filtered.map((row) => <article key={row.id} className="flex items-center gap-3 py-4"><div className="min-w-0 flex-1"><p className="font-medium">{row.title}</p><p className="text-xs text-[var(--text-secondary)]">{row.account} · {row.category} · {row.timestamp}</p></div><strong className={row.type === "income" ? "text-[var(--success)]" : row.type === "expense" ? "text-[var(--danger)]" : ""}>{row.type === "income" ? "+" : row.type === "expense" ? "-" : ""}{formatCurrency(row.amount,row.currency)}</strong><button aria-label="编辑交易" onClick={() => setEditing(row)}><Pencil className="size-4"/></button><button aria-label="删除交易" onClick={() => { if(confirm("删除此交易？账户余额会自动重新计算。")) void deleteTransaction(row.id).then(changed).catch((reason:unknown)=>setError(reason instanceof Error?reason.message:"删除失败")); }}><Trash2 className="size-4 text-[var(--danger)]"/></button></article>)}{!filtered.length && <p className="py-10 text-center text-sm text-[var(--text-secondary)]">还没有交易记录。</p>}{hasMore && <Button variant="ghost" className="my-3 w-full" onClick={()=>{void getTransactionPage(transactions.length,PAGE_SIZE).then((rows)=>{setTransactions((current)=>[...current,...rows]);setHasMore(rows.length===PAGE_SIZE);}).catch((reason:unknown)=>setError(reason instanceof Error?reason.message:"加载失败"));}}>加载更多</Button>}</div>}
+    {transfers.length > 0 && <section className="content-card mt-5"><h2 className="font-semibold">转账记录</h2>{transfers.map((row)=><div key={row.id} className="mt-3 flex items-center gap-3 border-t border-[var(--border)] pt-3"><span className="flex-1">{row.fromAccountName} → {row.toAccountName}<small className="ml-2 text-[var(--text-secondary)]">{new Date(row.transferDate).toLocaleDateString("zh-CN")}</small></span><strong>{formatCurrency(row.amount,row.currency)}</strong><button aria-label="删除转账" onClick={()=>{if(confirm("删除转账记录？两个账户余额会自动重新计算。"))void deleteTransfer(row.id).then(changed).catch((reason:unknown)=>setError(reason instanceof Error?reason.message:"删除失败"));}}><Trash2 className="size-4 text-[var(--danger)]"/></button></div>)}</section>}
+    <TransactionDialog open={editing !== undefined} record={editing} onOpenChange={(value) => { if(!value)setEditing(undefined); }} onSaved={changed}/><TransferDialog open={transferOpen} onOpenChange={setTransferOpen} onSaved={changed}/></div>;
+}
+
+function TransferDialog({open,onOpenChange,onSaved}:{open:boolean;onOpenChange:(value:boolean)=>void;onSaved:()=>void}){
+  const [accounts,setAccounts]=useState<AccountRecord[]>([]),[from,setFrom]=useState(""),[to,setTo]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState("");
+  useEffect(()=>{if(open)void getAccounts().then((rows)=>{const active=rows.filter((row)=>row.isActive),first=active[0];setAccounts(active);setFrom(first?.id??"");setTo(active.find((row)=>row.id!==first?.id&&row.currency===first?.currency)?.id??"");setError("");});},[open]);
+  const source=accounts.find((row)=>row.id===from),destinations=accounts.filter((row)=>row.id!==from&&row.currency===source?.currency);
+  return <Dialog open={open} onOpenChange={(value)=>{if(!busy)onOpenChange(value);}} title="账户转账" description="当前仅支持相同币种账户之间转账。"><form className="space-y-3" onSubmit={(event)=>{event.preventDefault();if(!source||!to)return;const data=new FormData(event.currentTarget);setBusy(true);void createTransfer({fromAccountId:from,toAccountId:to,amount:toMinorUnit(String(data.get("amount"))),currency:source.currency,transferDate:new Date(`${String(data.get("date"))}T12:00:00`).getTime(),note:String(data.get("note")??"")}).then(onSaved).catch((reason:unknown)=>setError(reason instanceof Error?reason.message:"转账失败")).finally(()=>setBusy(false));}}><label className="form-label">转出账户<select className="form-control" value={from} onChange={(event)=>{const next=event.target.value,nextSource=accounts.find((row)=>row.id===next);setFrom(next);setTo(accounts.find((row)=>row.id!==next&&row.currency===nextSource?.currency)?.id??"");}}>{accounts.map((row)=><option key={row.id} value={row.id}>{row.name} · {row.currency}</option>)}</select></label><label className="form-label">转入账户<select className="form-control" value={to} onChange={(event)=>setTo(event.target.value)}>{destinations.map((row)=><option key={row.id} value={row.id}>{row.name}</option>)}</select></label><label className="form-label">金额<input className="form-control" name="amount" required inputMode="decimal"/></label><label className="form-label">日期<input className="form-control" name="date" type="date" required defaultValue={localDateInput()}/></label><label className="form-label">备注<textarea className="form-control" name="note" rows={2}/></label>{error&&<p className="text-sm text-[var(--danger)]">{error}</p>}<div className="flex justify-end gap-2"><Button type="button" variant="secondary" onClick={()=>onOpenChange(false)}>取消</Button><Button type="submit" disabled={busy||!to}>{busy?"转账中…":"确认转账"}</Button></div></form></Dialog>;
 }

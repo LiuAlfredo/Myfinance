@@ -33,7 +33,7 @@ pub fn initialize(app: &tauri::AppHandle) -> Result<()> {
         [],
         |r| r.get(0),
     )?;
-    if populated && version < 7 {
+    if populated && version < 8 {
         let source = path(app)?;
         let destination = source.with_extension(format!("pre-upgrade-{}-{}.sqlite3", now(), id()));
         crate::database_backup::backup(&source, &destination).map_err(|e| {
@@ -50,7 +50,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         [],
         |r| r.get(0),
     )?;
-    if latest > 7 {
+    if latest > 8 {
         return Err(rusqlite::Error::InvalidQuery);
     }
     let tx = conn.unchecked_transaction()?;
@@ -75,6 +75,10 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         (
             7,
             include_str!("../migrations/007_routines_subscriptions.sql"),
+        ),
+        (
+            8,
+            include_str!("../migrations/008_finance_ledger_links.sql"),
         ),
     ] {
         let applied: bool = tx.query_row(
@@ -198,18 +202,18 @@ mod migration_tests {
             c.query_row("SELECT COUNT(*) FROM schema_migrations", [], |r| r
                 .get::<_, i64>(0))
                 .unwrap(),
-            7
+            8
         );
     }
     #[test]
     fn failed_upgrade_rolls_back_all_new_schema_changes() {
         let c = Connection::open_in_memory().unwrap();
         migrate(&c).unwrap();
-        c.execute_batch("DELETE FROM schema_migrations WHERE version=7;DROP TRIGGER protect_subscription_payment_transaction;DROP TABLE subscription_payments;DROP TABLE subscriptions;DROP TABLE routine_occurrences;DROP TABLE task_routines;CREATE TABLE subscriptions(unrelated TEXT);").unwrap();
+        c.execute_batch("DELETE FROM schema_migrations WHERE version=8;DROP TABLE recurring_payments;DROP TABLE installment_payments;ALTER TABLE planned_expenses DROP COLUMN transaction_id;CREATE TABLE recurring_payments(unrelated TEXT);").unwrap();
         assert!(migrate(&c).is_err());
         assert_eq!(
             c.query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE name='task_routines'",
+                "SELECT COUNT(*) FROM sqlite_master WHERE name='installment_payments'",
                 [],
                 |r| r.get::<_, i64>(0)
             )
@@ -218,7 +222,7 @@ mod migration_tests {
         );
         assert_eq!(
             c.query_row(
-                "SELECT COUNT(*) FROM schema_migrations WHERE version=7",
+                "SELECT COUNT(*) FROM schema_migrations WHERE version=8",
                 [],
                 |r| r.get::<_, i64>(0)
             )
@@ -230,7 +234,7 @@ mod migration_tests {
     fn refuses_newer_database_version() {
         let c = Connection::open_in_memory().unwrap();
         migrate(&c).unwrap();
-        c.execute("INSERT INTO schema_migrations VALUES(8,0)", [])
+        c.execute("INSERT INTO schema_migrations VALUES(9,0)", [])
             .unwrap();
         assert!(migrate(&c).is_err());
     }

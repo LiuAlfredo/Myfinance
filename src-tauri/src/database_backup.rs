@@ -124,7 +124,9 @@ pub(crate) fn validate_snapshot(connection: &Connection) -> Result<(), String> {
       ("note_attachments","SELECT id,note_id,name,size,sha256,data,created_at FROM note_attachments LIMIT 0"),
       ("task_routines","SELECT id,title,note,project_id,frequency,weekdays,anchor_day,next_day,missed_policy,active,created_at,updated_at FROM task_routines LIMIT 0"),
       ("subscriptions","SELECT id,title,amount,currency,account_id,frequency,anchor_day,next_day,reminder_days,status,created_at,updated_at FROM subscriptions LIMIT 0"),
-      ("subscription_payments","SELECT id,subscription_id,period_day,transaction_id,amount,paid_at FROM subscription_payments LIMIT 0")
+      ("subscription_payments","SELECT id,subscription_id,period_day,transaction_id,amount,paid_at FROM subscription_payments LIMIT 0"),
+      ("installment_payments","SELECT id,installment_id,period_no,transaction_id,amount,paid_at FROM installment_payments LIMIT 0"),
+      ("recurring_payments","SELECT id,recurring_id,scheduled_at,transaction_id,amount,paid_at FROM recurring_payments LIMIT 0")
     ]{
       let exists:bool=connection.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name=?1)",[table],|r|r.get(0)).map_err(|e|e.to_string())?;
       if exists{connection.prepare(sql).map_err(|_|format!("{table} 备份结构无效"))?;}

@@ -27,9 +27,11 @@ import {
 } from "./life-service";
 import {
   discardPendingNote,
+  flushAllNotes,
   flushNote,
   pendingNote,
   persistNote,
+  scheduleNote,
 } from "./note-save-queue";
 type View = "ACTIVE" | "ARCHIVED" | "TRASH";
 const empty: KnowledgeNoteInput = {
@@ -91,6 +93,7 @@ export function KnowledgePage() {
   useEffect(
     () => () => {
       revision.current++;
+      void flushAllNotes();
     },
     [],
   );
@@ -99,7 +102,7 @@ export function KnowledgePage() {
     if (!selected) return;
     const request = ++revision.current;
     setState("saving");
-    void persistNote(selected.id, next)
+    void scheduleNote(selected.id, next)
       .then(() => {
         if (request !== revision.current) return;
         setState("saved");

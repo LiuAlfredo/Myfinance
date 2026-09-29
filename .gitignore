@@ -11,6 +11,10 @@ src-tauri/target/
 .env.*
 !.env.example
 
+# Tauri updater signing keys (the public key is embedded in tauri.conf.json)
+myfinance-updater.key
+myfinance-updater.key.pub
+
 # Personal finance databases and SQLite sidecar files
 *.db
 *.db-*

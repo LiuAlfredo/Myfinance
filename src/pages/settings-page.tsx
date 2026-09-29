@@ -29,6 +29,7 @@ import {
   type BackupPreview,
 } from "@/features/life/workspace-service";
 import { BackupPanel } from "@/features/life/backup-panel";
+import { AppUpdatePanel } from "@/features/updater/app-update-panel";
 
 export function SettingsPage() {
   const [appInfo, setAppInfo] = useState<AppInfo>({
@@ -65,6 +66,7 @@ export function SettingsPage() {
         description="调整 MyFinance 的外观与基础应用偏好。"
       />
       <div className="settings-stack">
+        <AppUpdatePanel currentVersion={appInfo.version} />
         <BackupPanel />
         <section className="content-card flex flex-wrap items-center justify-between gap-5">
           <div className="flex items-center gap-3">

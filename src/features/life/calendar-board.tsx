@@ -200,9 +200,19 @@ export function CalendarBoard({
                         {h}:00
                       </span>
                     ))}
-                    {timed.map((e, i) => {
+                    {timed.map((e) => {
                       const top = Math.max(d.getTime(), e.startsAt ?? 0),
                         bottom = Math.min(next.getTime(), e.endsAt ?? 0),
+                        overlaps = timed
+                          .filter((other) =>
+                            (other.startsAt ?? Infinity) < (e.endsAt ?? -Infinity) &&
+                            (other.endsAt ?? -Infinity) > (e.startsAt ?? Infinity),
+                          )
+                          .sort((left, right) =>
+                            (left.startsAt ?? 0) - (right.startsAt ?? 0) ||
+                            left.id.localeCompare(right.id),
+                          ),
+                        column = Math.max(0, overlaps.findIndex((other) => other.id === e.id)),
                         height = Math.max(
                           20,
                           ((bottom - top) / (next.getTime() - d.getTime())) *
@@ -218,8 +228,8 @@ export function CalendarBoard({
                                 (next.getTime() - d.getTime())) *
                               768,
                             height,
-                            left: `${15 + (i * 85) / timed.length}%`,
-                            width: `${85 / timed.length}%`,
+                            left: `${15 + (column * 85) / Math.max(1, overlaps.length)}%`,
+                            width: `${85 / Math.max(1, overlaps.length)}%`,
                           }}
                           onClick={() => onEdit(e)}
                         >

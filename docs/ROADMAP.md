@@ -105,7 +105,7 @@ DONE
 状态：
 
 ```text
-IN PROGRESS
+DONE
 ```
 
 目标：

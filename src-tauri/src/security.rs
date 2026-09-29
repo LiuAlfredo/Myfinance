@@ -41,13 +41,19 @@ impl SecurityState {
     }
 
     fn revoke_vault(&self) -> Result<(), String> {
-        *self.vault_until.lock().map_err(|_| "安全状态不可用".to_string())? = None;
+        *self
+            .vault_until
+            .lock()
+            .map_err(|_| "安全状态不可用".to_string())? = None;
         Ok(())
     }
 
     pub fn vault_key_access(&self) -> Result<Zeroizing<Vec<u8>>, String> {
         let key = self.key()?;
-        let guard = self.vault_until.lock().map_err(|_| "安全状态不可用".to_string())?;
+        let guard = self
+            .vault_until
+            .lock()
+            .map_err(|_| "安全状态不可用".to_string())?;
         if !guard.is_some_and(|until| Instant::now() < until) {
             return Err("密码库已锁定，请验证软件密码".into());
         }
@@ -56,7 +62,11 @@ impl SecurityState {
 
     fn grant_vault(&self) -> Result<(), String> {
         self.key()?;
-        *self.vault_until.lock().map_err(|_| "安全状态不可用".to_string())? = Some(Instant::now() + Duration::from_secs(5 * 60));
+        *self
+            .vault_until
+            .lock()
+            .map_err(|_| "安全状态不可用".to_string())? =
+            Some(Instant::now() + Duration::from_secs(5 * 60));
         Ok(())
     }
 
@@ -109,7 +119,10 @@ fn password_is_valid(password: &str, encoded: &str) -> bool {
         .is_some()
 }
 
-pub(crate) fn wrap_data_key(password: &str, data_key: &[u8]) -> Result<(String, String, String), String> {
+pub(crate) fn wrap_data_key(
+    password: &str,
+    data_key: &[u8],
+) -> Result<(String, String, String), String> {
     let mut salt = [0_u8; 16];
     let mut nonce = [0_u8; 12];
     OsRng.fill_bytes(&mut salt);
@@ -142,7 +155,9 @@ pub(crate) fn unwrap_data_key(
     let nonce = BASE64
         .decode(nonce)
         .map_err(|_| "安全配置已损坏".to_string())?;
-    if nonce.len() != 12 { return Err("安全配置已损坏".to_string()); }
+    if nonce.len() != 12 {
+        return Err("安全配置已损坏".to_string());
+    }
     let wrapping_key = derive_wrapping_key(password, &salt)?;
     let cipher =
         Aes256Gcm::new_from_slice(&wrapping_key).map_err(|_| "数据密钥初始化失败".to_string())?;
@@ -156,13 +171,22 @@ fn initialize_security(app: &tauri::AppHandle, password: &str) -> Result<Vec<u8>
         return Err("软件密码至少需要 12 位".into());
     }
     let connection = connect(app).map_err(|error| error.to_string())?;
-    let private_count: i64 = connection.query_row("SELECT COUNT(*) FROM private_calendar_events", [], |row| row.get(0))
+    let private_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM private_calendar_events", [], |row| {
+            row.get(0)
+        })
         .map_err(|error| error.to_string())?;
-    let vault_count: i64 = connection.query_row("SELECT COUNT(*) FROM vault_items", [], |row| row.get(0))
+    let vault_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM vault_items", [], |row| row.get(0))
         .map_err(|error| error.to_string())?;
-    let partner_count: i64 = connection.query_row("SELECT COUNT(*) FROM private_partners", [], |row| row.get(0))
+    let partner_count: i64 = connection
+        .query_row("SELECT COUNT(*) FROM private_partners", [], |row| {
+            row.get(0)
+        })
         .map_err(|error| error.to_string())?;
-    if private_count > 0 || partner_count > 0 || vault_count > 0 { return Err("存在私密记录，但安全配置缺失，不能初始化新密码".into()); }
+    if private_count > 0 || partner_count > 0 || vault_count > 0 {
+        return Err("存在私密记录，但安全配置缺失，不能初始化新密码".into());
+    }
     let mut data_key = vec![0_u8; 32];
     OsRng.fill_bytes(&mut data_key);
     let (wrap_salt, wrapped_data_key, wrap_nonce) = wrap_data_key(password, &data_key)?;
@@ -178,13 +202,22 @@ fn initialize_security(app: &tauri::AppHandle, password: &str) -> Result<Vec<u8>
 #[tauri::command]
 pub fn app_password_setup_required(app: tauri::AppHandle) -> Result<bool, String> {
     let connection = connect(&app).map_err(|error| error.to_string())?;
-    let exists: bool = connection.query_row("SELECT EXISTS(SELECT 1 FROM app_security WHERE id=1)", [], |row| row.get(0))
+    let exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM app_security WHERE id=1)",
+            [],
+            |row| row.get(0),
+        )
         .map_err(|error| error.to_string())?;
     Ok(!exists)
 }
 
 #[tauri::command]
-pub fn setup_app_password(app: tauri::AppHandle, state: tauri::State<SecurityState>, password: String) -> Result<(), String> {
+pub fn setup_app_password(
+    app: tauri::AppHandle,
+    state: tauri::State<SecurityState>,
+    password: String,
+) -> Result<(), String> {
     let key = initialize_security(&app, &password)?;
     state.unlock_with(key)
 }
@@ -259,10 +292,16 @@ pub fn unlock_password_vault(
         return Err("请先在“软件密码”中将密码升级为至少 12 位，再启用密码库".into());
     }
     let connection = connect(&app).map_err(|error| error.to_string())?;
-    let hash: String = connection.query_row(
-        "SELECT password_hash FROM app_security WHERE id=1", [], |row| row.get(0),
-    ).map_err(|error| error.to_string())?;
-    if !password_is_valid(&password, &hash) { return Ok(false); }
+    let hash: String = connection
+        .query_row(
+            "SELECT password_hash FROM app_security WHERE id=1",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    if !password_is_valid(&password, &hash) {
+        return Ok(false);
+    }
     state.grant_vault()?;
     Ok(true)
 }
@@ -288,9 +327,14 @@ mod tests {
         state.unlock_with(vec![42_u8; 32]).unwrap();
         let key = state.key().unwrap();
         let (salt, wrapped, nonce) = wrap_data_key("new-password", &key).unwrap();
-        assert_eq!(unwrap_data_key("new-password", &salt, &wrapped, &nonce).unwrap(), key.to_vec());
+        assert_eq!(
+            unwrap_data_key("new-password", &salt, &wrapped, &nonce).unwrap(),
+            key.to_vec()
+        );
         assert!(unwrap_data_key("old-password", &salt, &wrapped, &nonce).is_err());
-        assert!(unwrap_data_key("new-password", &salt, &wrapped, &BASE64.encode([0_u8; 3])).is_err());
+        assert!(
+            unwrap_data_key("new-password", &salt, &wrapped, &BASE64.encode([0_u8; 3])).is_err()
+        );
         state.lock().unwrap();
         assert!(state.key().is_err());
     }

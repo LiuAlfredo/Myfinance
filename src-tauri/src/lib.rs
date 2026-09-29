@@ -33,6 +33,7 @@ pub fn run() {
         })
         .manage(security::SecurityState::new())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             get_app_info,
             workspace_search::search_workspace,
@@ -94,9 +95,12 @@ pub fn run() {
             commands::save_category,
             commands::set_category_active,
             commands::get_transactions,
+            commands::get_transactions_page,
             commands::save_transaction,
             commands::delete_transaction,
             commands::create_transfer,
+            commands::get_transfers,
+            commands::delete_transfer,
             commands::get_dashboard,
             commands::get_simple_records,
             commands::get_setting,
@@ -106,14 +110,18 @@ pub fn run() {
             commands::get_recurring,
             commands::set_recurring_active,
             commands::delete_recurring,
+            commands::post_recurring,
+            commands::undo_recurring_payment,
             commands::save_planned,
             commands::get_planned,
             commands::complete_planned,
+            commands::undo_planned,
             commands::delete_planned,
             commands::cancel_planned,
             commands::save_installment,
             commands::get_installments,
             commands::pay_installment,
+            commands::undo_installment_payment,
             commands::delete_installment,
             commands::cancel_installment,
             commands::save_budget,

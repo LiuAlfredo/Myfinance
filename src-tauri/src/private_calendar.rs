@@ -76,25 +76,45 @@ pub struct PrivateCalendarYearStats {
     last_day: String,
 }
 
-fn calendar_statistics(connection: &rusqlite::Connection, key: &[u8]) -> Result<Vec<PrivateCalendarYearStats>, String> {
-    let mut statement = connection.prepare("SELECT payload FROM private_calendar_events")
+fn calendar_statistics(
+    connection: &rusqlite::Connection,
+    key: &[u8],
+) -> Result<Vec<PrivateCalendarYearStats>, String> {
+    let mut statement = connection
+        .prepare("SELECT payload FROM private_calendar_events")
         .map_err(|error| error.to_string())?;
-    let rows = statement.query_map([], |row| row.get::<_, String>(0))
+    let rows = statement
+        .query_map([], |row| row.get::<_, String>(0))
         .map_err(|error| error.to_string())?;
     let mut years: BTreeMap<i32, (PrivateCalendarYearStats, HashSet<String>)> = BTreeMap::new();
     for row in rows {
         let payload: EventPayload = decrypt_json(key, &row.map_err(|error| error.to_string())?)?;
-        if !valid_day_key(&payload.day_key) { return Err("记录日期无效，无法统计".into()); }
+        if !valid_day_key(&payload.day_key) {
+            return Err("记录日期无效，无法统计".into());
+        }
         let year: i32 = payload.day_key[..4].parse().map_err(|_| "记录年份无效")?;
         let month: usize = payload.day_key[5..7].parse().map_err(|_| "记录月份无效")?;
-        let (stats, days) = years.entry(year).or_insert_with(|| (PrivateCalendarYearStats {
-            year, total: 0, active_days: 0, months: [0; 12],
-            first_day: payload.day_key.clone(), last_day: payload.day_key.clone(),
-        }, HashSet::new()));
+        let (stats, days) = years.entry(year).or_insert_with(|| {
+            (
+                PrivateCalendarYearStats {
+                    year,
+                    total: 0,
+                    active_days: 0,
+                    months: [0; 12],
+                    first_day: payload.day_key.clone(),
+                    last_day: payload.day_key.clone(),
+                },
+                HashSet::new(),
+            )
+        });
         stats.total += 1;
         stats.months[month - 1] += 1;
-        if payload.day_key < stats.first_day { stats.first_day = payload.day_key.clone(); }
-        if payload.day_key > stats.last_day { stats.last_day = payload.day_key.clone(); }
+        if payload.day_key < stats.first_day {
+            stats.first_day = payload.day_key.clone();
+        }
+        if payload.day_key > stats.last_day {
+            stats.last_day = payload.day_key.clone();
+        }
         days.insert(payload.day_key);
         stats.active_days = days.len();
     }
@@ -102,7 +122,10 @@ fn calendar_statistics(connection: &rusqlite::Connection, key: &[u8]) -> Result<
 }
 
 #[tauri::command]
-pub fn get_private_calendar_statistics(app: tauri::AppHandle, state: tauri::State<SecurityState>) -> Result<Vec<PrivateCalendarYearStats>, String> {
+pub fn get_private_calendar_statistics(
+    app: tauri::AppHandle,
+    state: tauri::State<SecurityState>,
+) -> Result<Vec<PrivateCalendarYearStats>, String> {
     let key = state.key()?;
     let connection = connect(&app).map_err(|error| error.to_string())?;
     calendar_statistics(&connection, &key)
@@ -178,7 +201,9 @@ fn valid_day_key(value: &str) -> bool {
 }
 
 fn valid_record_time(day_key: &str, occurred_at: i64) -> bool {
-    if !valid_day_key(day_key) { return false; }
+    if !valid_day_key(day_key) {
+        return false;
+    }
     let year: i64 = day_key[..4].parse().unwrap_or(0);
     let month: usize = day_key[5..7].parse().unwrap_or(0);
     let day: i64 = day_key[8..10].parse().unwrap_or(0);
@@ -304,7 +329,12 @@ pub fn save_private_calendar_event(
     save_event(&connection, &key, input, id_opt)
 }
 
-fn save_event(connection: &rusqlite::Connection, key: &[u8], input: PrivateCalendarEventInput, id_opt: Option<String>) -> Result<PrivateCalendarEvent, String> {
+fn save_event(
+    connection: &rusqlite::Connection,
+    key: &[u8],
+    input: PrivateCalendarEventInput,
+    id_opt: Option<String>,
+) -> Result<PrivateCalendarEvent, String> {
     if !valid_record_time(&input.day_key, input.occurred_at) {
         return Err("日期或时间无效".to_string());
     }
@@ -343,7 +373,9 @@ fn save_event(connection: &rusqlite::Connection, key: &[u8], input: PrivateCalen
             "INSERT INTO private_calendar_events(id,month_index,day_index,payload,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?5)"
         }, params![event_id, month_index, day_index, encrypted, timestamp],
     ).map_err(|error| error.to_string())?;
-    if changed == 0 { return Err("记录已不存在，请刷新后重试".into()); }
+    if changed == 0 {
+        return Err("记录已不存在，请刷新后重试".into());
+    }
     Ok(PrivateCalendarEvent {
         id: event_id,
         occurred_at: payload.occurred_at,
@@ -378,12 +410,20 @@ mod tests {
     fn test_database() -> rusqlite::Connection {
         let connection = rusqlite::Connection::open_in_memory().unwrap();
         connection.execute_batch("CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,applied_at INTEGER NOT NULL);").unwrap();
-        connection.execute_batch(include_str!("../migrations/002_private_calendar.sql")).unwrap();
+        connection
+            .execute_batch(include_str!("../migrations/002_private_calendar.sql"))
+            .unwrap();
         connection
     }
 
     fn input(day: &str, timestamp: i64) -> PrivateCalendarEventInput {
-        PrivateCalendarEventInput { occurred_at: timestamp, day_key: day.into(), person_name: "private-person".into(), location: "private-place".into(), note: String::new() }
+        PrivateCalendarEventInput {
+            occurred_at: timestamp,
+            day_key: day.into(),
+            person_name: "private-person".into(),
+            location: "private-place".into(),
+            note: String::new(),
+        }
     }
 
     #[test]
@@ -391,25 +431,72 @@ mod tests {
         let connection = test_database();
         let key = [9_u8; 32];
         assert!(calendar_statistics(&connection, &key).unwrap().is_empty());
-        let first = save_event(&connection, &key, input("2024-02-29", 1_709_164_800_000), None).unwrap();
-        save_event(&connection, &key, input("2024-02-29", 1_709_168_400_000), None).unwrap();
+        let first = save_event(
+            &connection,
+            &key,
+            input("2024-02-29", 1_709_164_800_000),
+            None,
+        )
+        .unwrap();
+        save_event(
+            &connection,
+            &key,
+            input("2024-02-29", 1_709_168_400_000),
+            None,
+        )
+        .unwrap();
         let stats = calendar_statistics(&connection, &key).unwrap();
         assert_eq!(stats[0].total, 2);
         assert_eq!(stats[0].active_days, 1);
         assert_eq!(stats[0].months[1], 2);
-        save_event(&connection, &key, input("2025-01-01", 1_735_689_600_000), Some(first.id.clone())).unwrap();
+        save_event(
+            &connection,
+            &key,
+            input("2025-01-01", 1_735_689_600_000),
+            Some(first.id.clone()),
+        )
+        .unwrap();
         let stats = calendar_statistics(&connection, &key).unwrap();
-        assert_eq!(stats.iter().map(|row| (row.year, row.total)).collect::<Vec<_>>(), vec![(2025, 1), (2024, 1)]);
-        let index: String = connection.query_row("SELECT day_index FROM private_calendar_events WHERE id=?1", [&first.id], |row| row.get(0)).unwrap();
+        assert_eq!(
+            stats
+                .iter()
+                .map(|row| (row.year, row.total))
+                .collect::<Vec<_>>(),
+            vec![(2025, 1), (2024, 1)]
+        );
+        let index: String = connection
+            .query_row(
+                "SELECT day_index FROM private_calendar_events WHERE id=?1",
+                [&first.id],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(index, blind_index(&key, "2025-01-01").unwrap());
-        let encrypted: String = connection.query_row("SELECT payload FROM private_calendar_events WHERE id=?1", [&first.id], |row| row.get(0)).unwrap();
+        let encrypted: String = connection
+            .query_row(
+                "SELECT payload FROM private_calendar_events WHERE id=?1",
+                [&first.id],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert!(!encrypted.contains("private-person"));
         assert!(calendar_statistics(&connection, &[0_u8; 32]).is_err());
-        connection.execute("DELETE FROM private_calendar_events WHERE id=?1", [&first.id]).unwrap();
+        connection
+            .execute(
+                "DELETE FROM private_calendar_events WHERE id=?1",
+                [&first.id],
+            )
+            .unwrap();
         let stats = calendar_statistics(&connection, &key).unwrap();
         assert_eq!(stats.len(), 1);
         assert_eq!(stats[0].year, 2024);
-        assert!(save_event(&connection, &key, input("2025-01-01", 1_735_689_600_000), Some(first.id)).is_err());
+        assert!(save_event(
+            &connection,
+            &key,
+            input("2025-01-01", 1_735_689_600_000),
+            Some(first.id)
+        )
+        .is_err());
     }
 
     #[test]

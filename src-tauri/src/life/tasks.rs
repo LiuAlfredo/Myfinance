@@ -148,6 +148,9 @@ pub fn save_daily_task(
     } else {
         tx.execute("INSERT INTO daily_tasks(id,title,note,status,priority,planned_day,due_at,project_id,parent_id,completed_at,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?11)",params![task_id,title,input.note.trim(),input.status,input.priority,input.planned_day,input.due_at,input.project_id,input.parent_id,completed,timestamp]).map_err(|e|e.to_string())?;
     }
+    if ["DONE", "TODO", "ACTIVE"].contains(&input.status.as_str()) {
+        tx.execute("UPDATE journey_project_items SET status=CASE ?2 WHEN 'DONE' THEN 'DONE' WHEN 'ACTIVE' THEN 'ACTIVE' ELSE 'TODO' END,progress=CASE WHEN ?2='DONE' THEN 100 WHEN ?2='TODO' THEN 0 ELSE progress END,updated_at=?3 WHERE id=(SELECT source_item_id FROM daily_tasks WHERE id=?1)",params![task_id,input.status,timestamp]).map_err(|e|e.to_string())?;
+    }
     if input.include_children.unwrap_or(false) && input.status == "DONE" {
         tx.execute("WITH RECURSIVE children(id) AS (SELECT id FROM daily_tasks WHERE parent_id=?1 UNION SELECT t.id FROM daily_tasks t JOIN children c ON t.parent_id=c.id) UPDATE daily_tasks SET status='DONE',completed_at=?2,updated_at=?2 WHERE id IN (SELECT id FROM children) AND status IN ('TODO','ACTIVE')",params![task_id,timestamp]).map_err(|e|e.to_string())?;
     }
@@ -174,8 +177,14 @@ pub fn set_daily_task_status(
     if changed == 0 {
         return Err("任务不存在".into());
     }
+    if ["DONE", "TODO", "ACTIVE"].contains(&status.as_str()) {
+        tx.execute("UPDATE journey_project_items SET status=CASE ?2 WHEN 'DONE' THEN 'DONE' WHEN 'ACTIVE' THEN 'ACTIVE' ELSE 'TODO' END,progress=CASE WHEN ?2='DONE' THEN 100 WHEN ?2='TODO' THEN 0 ELSE progress END,updated_at=?3 WHERE id=(SELECT source_item_id FROM daily_tasks WHERE id=?1)",params![id,status,timestamp]).map_err(|e|e.to_string())?;
+    }
     if include_children.unwrap_or(false) {
         tx.execute("WITH RECURSIVE children(id) AS (SELECT id FROM daily_tasks WHERE parent_id=?1 UNION SELECT t.id FROM daily_tasks t JOIN children c ON t.parent_id=c.id) UPDATE daily_tasks SET status=?2,completed_at=CASE WHEN ?2='DONE' THEN COALESCE(completed_at,?3) ELSE NULL END,updated_at=?3 WHERE id IN (SELECT id FROM children) AND status NOT IN ('DONE','CANCELLED')",params![id,status,timestamp]).map_err(|e|e.to_string())?;
+        if ["DONE", "TODO", "ACTIVE"].contains(&status.as_str()) {
+            tx.execute("WITH RECURSIVE children(id) AS (SELECT id FROM daily_tasks WHERE parent_id=?1 UNION SELECT t.id FROM daily_tasks t JOIN children c ON t.parent_id=c.id) UPDATE journey_project_items SET status=CASE ?2 WHEN 'DONE' THEN 'DONE' WHEN 'ACTIVE' THEN 'ACTIVE' ELSE 'TODO' END,progress=CASE WHEN ?2='DONE' THEN 100 WHEN ?2='TODO' THEN 0 ELSE progress END,updated_at=?3 WHERE id IN (SELECT source_item_id FROM daily_tasks WHERE id IN (SELECT id FROM children) AND source_item_id IS NOT NULL)",params![id,status,timestamp]).map_err(|e|e.to_string())?;
+        }
     }
     tx.commit().map_err(|e| e.to_string())
 }

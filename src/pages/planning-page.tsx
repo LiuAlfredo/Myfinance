@@ -21,12 +21,16 @@ import {
   getCategories,
   getPlanned,
   getRecurring,
+  localDateInput,
+  postRecurring,
   savePlanned,
   saveRecurring,
   setRecurringActive,
   toMinorUnit,
   type PlannedRecord,
   type RecurringRecord,
+  undoPlanned,
+  undoRecurringPayment,
 } from "@/services/finance-service";
 import { formatCurrency } from "@/lib/utils";
 import type { AccountRecord, CategoryRecord } from "@/types/finance";
@@ -192,7 +196,7 @@ function PlannedRow({
 }) {
   const disabled = item.status !== "PLANNED";
   const showToast = useUiStore((s) => s.showToast);
-  const act = (promise: Promise<void>, message: string) =>
+  const act = (promise: Promise<unknown>, message: string) =>
     void promise
       .then(() => {
         showToast(message);
@@ -213,7 +217,7 @@ function PlannedRow({
       </div>
       <div className="flex items-center gap-2">
         <strong className="text-[var(--danger)]">
-          -{formatCurrency(item.amount / 100)}
+          -{formatCurrency(item.amount / 100, item.currency)}
         </strong>
         {!disabled && (
           <>
@@ -252,6 +256,7 @@ function PlannedRow({
             </button>
           </>
         )}
+        {item.status === "COMPLETED" && item.transactionId && <Button size="sm" variant="secondary" onClick={()=>{if(confirm("撤销入账并恢复为待处理计划？"))act(undoPlanned(item.id),"计划入账已撤销");}}>撤销入账</Button>}
       </div>
     </div>
   );
@@ -266,7 +271,7 @@ function RecurringRow({
   onRefresh: () => void;
 }) {
   const showToast = useUiStore((s) => s.showToast);
-  const act = (promise: Promise<void>, message: string) =>
+  const act = (promise: Promise<unknown>, message: string) =>
     void promise
       .then(() => {
         showToast(message);
@@ -295,8 +300,10 @@ function RecurringRow({
           }
         >
           {item.type === "INCOME" ? "+" : "-"}
-          {formatCurrency(item.amount / 100)}
+          {formatCurrency(item.amount / 100, item.currency)}
         </strong>
+        {item.isActive && <Button size="sm" onClick={()=>{if(confirm(`按 ${new Date(item.nextRunDate).toLocaleDateString("zh-CN")} 创建实际${item.type === "INCOME" ? "收入" : "支出"}？`))act(postRecurring(item.id),"固定收支已入账");}}>本期入账</Button>}
+        {item.lastTransactionId && <Button size="sm" variant="secondary" onClick={()=>{if(confirm("撤销最近一次入账？"))act(undoRecurringPayment(item.id),"最近一次入账已撤销");}}>撤销最近</Button>}
         <button
           aria-label="启用或停用"
           onClick={() =>
@@ -420,8 +427,8 @@ function PlannedDialog({
               type="date"
               defaultValue={
                 record
-                  ? new Date(record.plannedDate).toISOString().slice(0, 10)
-                  : new Date().toISOString().slice(0, 10)
+                  ? localDateInput(new Date(record.plannedDate))
+                  : localDateInput()
               }
               className="form-control"
             />
@@ -551,14 +558,15 @@ function RecurringDialog({
         className="space-y-3"
         onSubmit={(e) => {
           e.preventDefault();
-          const d = new FormData(e.currentTarget);
+          const d = new FormData(e.currentTarget), account=accounts.find((value)=>value.id===String(d.get("accountId")));
+          if(!account){setError("请选择有效账户");return;}
           void saveRecurring(
             {
               type: String(d.get("type")),
               accountId: String(d.get("accountId")),
               categoryId: String(d.get("categoryId")) || undefined,
               amount: toMinorUnit(String(d.get("amount"))),
-              currency: "CNY",
+              currency: account.currency,
               title: String(d.get("title")),
               frequency: String(d.get("frequency")),
               startDate: new Date(String(d.get("startDate"))).getTime(),
@@ -671,8 +679,8 @@ function RecurringDialog({
               required
               defaultValue={
                 record
-                  ? new Date(record.startDate).toISOString().slice(0, 10)
-                  : new Date().toISOString().slice(0, 10)
+                  ? localDateInput(new Date(record.startDate))
+                  : localDateInput()
               }
               className="form-control"
             />
@@ -684,7 +692,7 @@ function RecurringDialog({
               type="date"
               defaultValue={
                 record?.endDate
-                  ? new Date(record.endDate).toISOString().slice(0, 10)
+                  ? localDateInput(new Date(record.endDate))
                   : ""
               }
               className="form-control"

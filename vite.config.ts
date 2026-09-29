@@ -11,6 +11,18 @@ export default defineConfig({
     },
   },
   clearScreen: false,
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "vendor-react": ["react", "react-dom", "react-router-dom", "zustand"],
+          "vendor-charts": ["recharts"],
+          "vendor-markdown": ["react-markdown", "remark-gfm"],
+          "vendor-motion": ["motion"],
+        },
+      },
+    },
+  },
   server: {
     port: 1420,
     strictPort: true,

@@ -214,7 +214,12 @@ pub fn get_journey_project(
         .query_row(
             "SELECT id, title FROM journey_ideas WHERE converted_project_id=?1",
             [&id],
-            |r| Ok(JourneyIdeaSummary { id: r.get(0)?, title: r.get(1)? }),
+            |r| {
+                Ok(JourneyIdeaSummary {
+                    id: r.get(0)?,
+                    title: r.get(1)?,
+                })
+            },
         )
         .optional()
         .map_err(|e| e.to_string())?;
@@ -254,7 +259,6 @@ pub fn get_journey_project(
         linked_goals,
     })
 }
-
 
 #[tauri::command]
 pub fn save_journey_project(
