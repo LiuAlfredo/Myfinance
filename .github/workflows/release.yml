@@ -45,3 +45,30 @@ jobs:
           prerelease: false
           updaterJsonPreferNsis: true
           args: --bundles nsis
+      - name: Normalize updater download URL
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $releaseDir = Join-Path $env:RUNNER_TEMP "myfinance-release"
+          New-Item -ItemType Directory -Force -Path $releaseDir | Out-Null
+
+          gh release download $tag --repo $env:GITHUB_REPOSITORY --pattern latest.json --dir $releaseDir
+          $manifestPath = Join-Path $releaseDir "latest.json"
+          $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+          $release = gh release view $tag --repo $env:GITHUB_REPOSITORY --json assets | ConvertFrom-Json
+          $installer = $release.assets | Where-Object { $_.name -like "*.exe" } | Select-Object -First 1
+          if (-not $installer) {
+            throw "No Windows installer asset was found in release $tag"
+          }
+
+          $assetName = [Uri]::EscapeDataString($installer.name)
+          $manifest.platforms.'windows-x86_64'.url = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/$assetName"
+          $manifest | ConvertTo-Json -Depth 10 | Set-Content -Encoding utf8NoBOM $manifestPath
+          gh release upload $tag $manifestPath --repo $env:GITHUB_REPOSITORY --clobber
+
+          $published = Invoke-RestMethod "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/latest.json?run=$env:GITHUB_RUN_ID"
+          if ($published.platforms.'windows-x86_64'.url -notlike "https://github.com/*/releases/download/$tag/*.exe") {
+            throw "Published updater manifest does not contain a direct installer URL"
+          }
