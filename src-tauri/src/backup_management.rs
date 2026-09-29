@@ -37,10 +37,10 @@ pub struct BackupStatus {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BackupPreview {
-    schema_version: i64,
-    upgraded_version: i64,
-    has_security: bool,
-    counts: Vec<(String, i64)>,
+    pub(crate) schema_version: i64,
+    pub(crate) upgraded_version: i64,
+    pub(crate) has_security: bool,
+    pub(crate) counts: Vec<(String, i64)>,
 }
 
 fn setting(c: &Connection, key: &str) -> Result<Option<String>, String> {
@@ -214,6 +214,10 @@ pub fn run_automatic_backup(app: tauri::AppHandle, force: bool) -> Result<Option
 }
 #[tauri::command]
 pub fn preview_database_backup(source: String) -> Result<BackupPreview, String> {
+    preview_path(Path::new(&source))
+}
+
+pub(crate) fn preview_path(source: &Path) -> Result<BackupPreview, String> {
     let source = Connection::open_with_flags(source, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(|e| e.to_string())?;
     let mut snapshot = Connection::open_in_memory().map_err(|e| e.to_string())?;

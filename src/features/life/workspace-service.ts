@@ -78,6 +78,41 @@ export const automaticBackup = (force = false) =>
   workspaceCall<string | null>("run_automatic_backup", { force });
 export const previewBackup = (source: string) =>
   workspaceCall<BackupPreview>("preview_database_backup", { source });
+export interface CloudBackupStatus {
+  configured: boolean;
+  endpoint: string | null;
+  deviceId: string | null;
+  lastSuccess: number | null;
+  lastError: string | null;
+}
+export interface CloudBackupRecord {
+  id: string;
+  deviceId: string;
+  createdAt: number;
+  uploadedAt: number;
+  encryptedSize: number;
+  sourceSize: number;
+  schemaVersion: number;
+  checksum: string;
+}
+export const generateCloudRecoveryKey = () =>
+  workspaceCall<string>("generate_cloud_recovery_key");
+export const saveCloudBackupConfig = (input: {
+  endpoint: string;
+  recoveryKey: string;
+}) => workspaceCall<void>("save_cloud_backup_config", { input });
+export const cloudBackupStatus = () =>
+  workspaceCall<CloudBackupStatus>("get_cloud_backup_status");
+export const testCloudBackup = () =>
+  workspaceCall<void>("test_cloud_backup");
+export const listCloudBackups = () =>
+  workspaceCall<CloudBackupRecord[]>("list_cloud_backups");
+export const uploadCloudBackup = () =>
+  workspaceCall<CloudBackupRecord>("upload_cloud_backup");
+export const previewCloudBackup = (backupId: string) =>
+  workspaceCall<BackupPreview>("preview_cloud_backup", { backupId });
+export const restoreCloudBackup = (backupId: string) =>
+  workspaceCall<void>("restore_cloud_backup", { backupId });
 export interface SearchHit {
   id: string;
   kind: string;

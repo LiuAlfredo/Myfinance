@@ -30,6 +30,7 @@ import {
 } from "@/features/life/workspace-service";
 import { BackupPanel } from "@/features/life/backup-panel";
 import { AppUpdatePanel } from "@/features/updater/app-update-panel";
+import { CloudBackupPanel } from "@/features/cloud/cloud-backup-panel";
 
 export function SettingsPage() {
   const [appInfo, setAppInfo] = useState<AppInfo>({
@@ -67,6 +68,7 @@ export function SettingsPage() {
       />
       <div className="settings-stack">
         <AppUpdatePanel currentVersion={appInfo.version} />
+        <CloudBackupPanel />
         <BackupPanel />
         <section className="content-card flex flex-wrap items-center justify-between gap-5">
           <div className="flex items-center gap-3">

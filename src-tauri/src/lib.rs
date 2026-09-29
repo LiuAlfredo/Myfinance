@@ -1,4 +1,5 @@
 mod backup_management;
+mod cloud_backup;
 mod commands;
 mod database;
 mod database_backup;
@@ -51,6 +52,14 @@ pub fn run() {
             backup_management::save_backup_config,
             backup_management::run_automatic_backup,
             backup_management::preview_database_backup,
+            cloud_backup::generate_cloud_recovery_key,
+            cloud_backup::save_cloud_backup_config,
+            cloud_backup::get_cloud_backup_status,
+            cloud_backup::test_cloud_backup,
+            cloud_backup::list_cloud_backups,
+            cloud_backup::upload_cloud_backup,
+            cloud_backup::preview_cloud_backup,
+            cloud_backup::restore_cloud_backup,
             security::verify_app_password,
             security::app_password_setup_required,
             security::setup_app_password,

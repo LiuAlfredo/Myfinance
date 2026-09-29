@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "myfinance-cloud-backup",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-29",
+  "account_id": "7d741833e2d365dfa20907ef47cbf7d5",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "myfinance-cloud",
+      "database_id": "fdf8e396-1580-4e95-9b97-b84dd5c03f2a",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}
