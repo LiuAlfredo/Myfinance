@@ -56,19 +56,69 @@ pub struct CloudConfigInput {
     recovery_key: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 struct StoredCloudConfig {
     endpoint: String,
     device_id: String,
     encrypted_recovery_key: String,
     nonce: String,
+    #[serde(default)]
+    account_id: Option<String>,
+    #[serde(default)]
+    username: Option<String>,
+    #[serde(default)]
+    encrypted_access_token: Option<String>,
+    #[serde(default)]
+    access_nonce: Option<String>,
+    #[serde(default)]
+    session_expires_at: Option<i64>,
 }
 
 struct CloudConfig {
     endpoint: String,
     device_id: String,
     recovery_key: Zeroizing<String>,
+    account_id: Option<String>,
+    access_token: Option<Zeroizing<String>>,
+}
+
+impl CloudConfig {
+    fn bearer(&self) -> Result<&str, String> {
+        if let Some(token) = self.access_token.as_ref() {
+            Ok(token.as_str())
+        } else if self.account_id.is_none() {
+            Ok(self.recovery_key.as_str())
+        } else {
+            Err("请先登录云账号".into())
+        }
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudAccountInput {
+    endpoint: String,
+    username: String,
+    password: String,
+    recovery_key: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CloudAccountSession {
+    account_id: String,
+    username: String,
+    token: String,
+    expires_at: i64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudAccountInfo {
+    account_id: String,
+    username: String,
+    expires_at: i64,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -104,6 +154,10 @@ pub struct CloudBackupStatus {
     current_revision: i64,
     last_backup_revision: i64,
     running: bool,
+    signed_in: bool,
+    username: Option<String>,
+    account_id: Option<String>,
+    session_expires_at: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -232,10 +286,16 @@ fn load_config(app: &tauri::AppHandle, state: &SecurityState) -> Result<CloudCon
     let stored: StoredCloudConfig = serde_json::from_str(&raw).map_err(|_| "云备份配置已损坏")?;
     let recovery_key =
         decrypt_secret(&stored.encrypted_recovery_key, &stored.nonce, &state.key()?)?;
+    let access_token = match (&stored.encrypted_access_token, &stored.access_nonce) {
+        (Some(ciphertext), Some(nonce)) => Some(decrypt_secret(ciphertext, nonce, &state.key()?)?),
+        _ => None,
+    };
     Ok(CloudConfig {
         endpoint: normalize_endpoint(&stored.endpoint)?,
         device_id: stored.device_id,
         recovery_key,
+        account_id: stored.account_id,
+        access_token,
     })
 }
 
@@ -290,7 +350,11 @@ async fn response_error(response: reqwest::Response) -> String {
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
     if status == StatusCode::UNAUTHORIZED {
-        "恢复密钥与云端配置不匹配".into()
+        "账号或密码不正确，或云端登录已过期".into()
+    } else if status == StatusCode::TOO_MANY_REQUESTS {
+        "登录失败次数过多，请 15 分钟后重试".into()
+    } else if status == StatusCode::CONFLICT && body.contains("account already exists") {
+        "该账号已经注册，请直接登录".into()
     } else if body.is_empty() {
         format!("云端请求失败：{status}")
     } else {
@@ -313,7 +377,7 @@ async fn download(
     }
     let response = client()?
         .get(format!("{}/v1/backups/{backup_id}", config.endpoint))
-        .bearer_auth(config.recovery_key.as_str())
+        .bearer_auth(config.bearer()?)
         .send()
         .await
         .map_err(|error| format!("无法连接云端：{error}"))?;
@@ -363,14 +427,169 @@ pub fn save_cloud_backup_config(
     }
     let existing = setting(&app, CONFIG_KEY)?
         .and_then(|raw| serde_json::from_str::<StoredCloudConfig>(&raw).ok());
-    let device_id = existing.map(|value| value.device_id).unwrap_or_else(id);
+    let device_id = existing
+        .as_ref()
+        .map(|value| value.device_id.clone())
+        .unwrap_or_else(id);
     let (encrypted_recovery_key, nonce) = encrypt_secret(recovery_key.as_bytes(), &state.key()?)?;
     let stored = StoredCloudConfig {
         endpoint,
         device_id,
         encrypted_recovery_key,
         nonce,
+        account_id: existing.as_ref().and_then(|value| value.account_id.clone()),
+        username: existing.as_ref().and_then(|value| value.username.clone()),
+        encrypted_access_token: existing
+            .as_ref()
+            .and_then(|value| value.encrypted_access_token.clone()),
+        access_nonce: existing
+            .as_ref()
+            .and_then(|value| value.access_nonce.clone()),
+        session_expires_at: existing.as_ref().and_then(|value| value.session_expires_at),
     };
+    put_setting(
+        &app,
+        CONFIG_KEY,
+        &serde_json::to_string(&stored).map_err(|error| error.to_string())?,
+    )
+}
+
+async fn authenticate_cloud_account(
+    app: &tauri::AppHandle,
+    state: &SecurityState,
+    input: CloudAccountInput,
+    action: &str,
+) -> Result<CloudAccountInfo, String> {
+    let endpoint = normalize_endpoint(&input.endpoint)?;
+    let username = input.username.trim().to_lowercase();
+    if username.len() < 3
+        || username.len() > 32
+        || !username
+            .chars()
+            .all(|value| value.is_ascii_alphanumeric() || matches!(value, '_' | '-' | '.'))
+    {
+        return Err("账号须为 3–32 位字母、数字、点、横线或下划线".into());
+    }
+    if input.password.chars().count() < 12 || input.password.chars().count() > 128 {
+        return Err("云账号密码须为 12–128 位".into());
+    }
+    let existing = setting(app, CONFIG_KEY)?
+        .and_then(|raw| serde_json::from_str::<StoredCloudConfig>(&raw).ok());
+    let needs_legacy_claim = existing
+        .as_ref()
+        .is_some_and(|value| value.account_id.is_none());
+    let device_id = existing
+        .as_ref()
+        .map(|value| value.device_id.clone())
+        .unwrap_or_else(id);
+    let recovery_key = if input.recovery_key.trim().is_empty() {
+        load_config(app, state)?.recovery_key
+    } else {
+        Zeroizing::new(input.recovery_key.trim().to_string())
+    };
+    if recovery_key.chars().count() < MIN_RECOVERY_KEY_LENGTH {
+        return Err("恢复密钥至少需要 24 位".into());
+    }
+    let response = client()?
+        .post(format!("{endpoint}/v1/auth/{action}"))
+        .json(&serde_json::json!({
+            "username": username,
+            "password": input.password,
+            "deviceId": device_id,
+        }))
+        .send()
+        .await
+        .map_err(|error| format!("无法连接云端：{error}"))?;
+    if !response.status().is_success() {
+        return Err(response_error(response).await);
+    }
+    let session = response
+        .json::<CloudAccountSession>()
+        .await
+        .map_err(|_| "云端返回了无效的登录信息".to_string())?;
+    let data_key = state.key()?;
+    let (encrypted_recovery_key, nonce) = encrypt_secret(recovery_key.as_bytes(), &data_key)?;
+    let (encrypted_access_token, access_nonce) =
+        encrypt_secret(session.token.as_bytes(), &data_key)?;
+    let stored = StoredCloudConfig {
+        endpoint: endpoint.clone(),
+        device_id,
+        encrypted_recovery_key,
+        nonce,
+        account_id: Some(session.account_id.clone()),
+        username: Some(session.username.clone()),
+        encrypted_access_token: Some(encrypted_access_token),
+        access_nonce: Some(access_nonce),
+        session_expires_at: Some(session.expires_at),
+    };
+    if needs_legacy_claim {
+        let claim = client()?
+            .post(format!("{endpoint}/v1/auth/claim-legacy"))
+            .bearer_auth(&session.token)
+            .header("x-legacy-token", recovery_key.as_str())
+            .send()
+            .await
+            .map_err(|error| format!("账号已登录，但历史备份迁移失败：{error}"))?;
+        if !claim.status().is_success() {
+            return Err(format!(
+                "账号已登录，但历史备份迁移失败：{}",
+                response_error(claim).await
+            ));
+        }
+    }
+    put_setting(
+        app,
+        CONFIG_KEY,
+        &serde_json::to_string(&stored).map_err(|error| error.to_string())?,
+    )?;
+    Ok(CloudAccountInfo {
+        account_id: session.account_id,
+        username: session.username,
+        expires_at: session.expires_at,
+    })
+}
+
+#[tauri::command]
+pub async fn register_cloud_account(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SecurityState>,
+    input: CloudAccountInput,
+) -> Result<CloudAccountInfo, String> {
+    authenticate_cloud_account(&app, &state, input, "register").await
+}
+
+#[tauri::command]
+pub async fn login_cloud_account(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SecurityState>,
+    input: CloudAccountInput,
+) -> Result<CloudAccountInfo, String> {
+    authenticate_cloud_account(&app, &state, input, "login").await
+}
+
+#[tauri::command]
+pub async fn logout_cloud_account(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SecurityState>,
+) -> Result<(), String> {
+    let config = load_config(&app, &state)?;
+    if config.access_token.is_some() {
+        let response = client()?
+            .post(format!("{}/v1/auth/logout", config.endpoint))
+            .bearer_auth(config.bearer()?)
+            .send()
+            .await
+            .map_err(|error| format!("无法连接云端：{error}"))?;
+        if !response.status().is_success() {
+            return Err(response_error(response).await);
+        }
+    }
+    let raw = setting(&app, CONFIG_KEY)?.ok_or("请先配置云备份")?;
+    let mut stored: StoredCloudConfig =
+        serde_json::from_str(&raw).map_err(|_| "云备份配置已损坏")?;
+    stored.encrypted_access_token = None;
+    stored.access_nonce = None;
+    stored.session_expires_at = None;
     put_setting(
         &app,
         CONFIG_KEY,
@@ -402,6 +621,15 @@ pub fn get_cloud_backup_status(app: tauri::AppHandle) -> Result<CloudBackupStatu
         current_revision: current_revision(&app)?,
         last_backup_revision,
         running: CLOUD_BACKUP_RUNNING.load(Ordering::Acquire),
+        signed_in: stored.as_ref().is_some_and(|value| {
+            value.encrypted_access_token.is_some()
+                && value
+                    .session_expires_at
+                    .is_some_and(|expires| expires > now())
+        }),
+        username: stored.as_ref().and_then(|value| value.username.clone()),
+        account_id: stored.as_ref().and_then(|value| value.account_id.clone()),
+        session_expires_at: stored.as_ref().and_then(|value| value.session_expires_at),
     })
 }
 
@@ -426,7 +654,7 @@ pub async fn test_cloud_backup(
     let config = load_config(&app, &state)?;
     let response = client()?
         .get(format!("{}/v1/backups", config.endpoint))
-        .bearer_auth(config.recovery_key.as_str())
+        .bearer_auth(config.bearer()?)
         .send()
         .await
         .map_err(|error| format!("无法连接云端：{error}"))?;
@@ -445,7 +673,7 @@ pub async fn list_cloud_backups(
     let config = load_config(&app, &state)?;
     let response = client()?
         .get(format!("{}/v1/backups", config.endpoint))
-        .bearer_auth(config.recovery_key.as_str())
+        .bearer_auth(config.bearer()?)
         .send()
         .await
         .map_err(|error| format!("无法连接云端：{error}"))?;
@@ -473,7 +701,7 @@ async fn run_cleanup(
     };
     let response = client()?
         .post(format!("{}/v1/backups/{path}", config.endpoint))
-        .bearer_auth(config.recovery_key.as_str())
+        .bearer_auth(config.bearer()?)
         .json(&serde_json::json!({
             "deviceId": config.device_id,
             "retain": policy.retain,
@@ -516,7 +744,7 @@ async fn upload_cloud_backup_kind(
         for attempt in 0..3 {
             match client()?
                 .post(format!("{}/v1/backups", config.endpoint))
-                .bearer_auth(config.recovery_key.as_str())
+                .bearer_auth(config.bearer()?)
                 .header("x-backup-id", &backup_id)
                 .header("x-device-id", &config.device_id)
                 .header("x-created-at", created_at)
@@ -588,7 +816,16 @@ pub async fn run_automatic_cloud_backup(
     force: bool,
 ) -> Result<Option<CloudBackupRecord>, String> {
     let policy = policy(&app)?;
-    if !policy.enabled || setting(&app, CONFIG_KEY)?.is_none() || state.key().is_err() {
+    let stored = setting(&app, CONFIG_KEY)?
+        .and_then(|raw| serde_json::from_str::<StoredCloudConfig>(&raw).ok());
+    let account_session_available = stored.as_ref().is_none_or(|config| {
+        config.account_id.is_none()
+            || (config.encrypted_access_token.is_some()
+                && config
+                    .session_expires_at
+                    .is_some_and(|expires| expires > now()))
+    });
+    if !policy.enabled || stored.is_none() || !account_session_available || state.key().is_err() {
         return Ok(None);
     }
     let revision = current_revision(&app)?;
@@ -633,7 +870,7 @@ pub async fn set_cloud_backup_pinned(
     let config = load_config(&app, &state)?;
     let response = client()?
         .patch(format!("{}/v1/backups/{backup_id}", config.endpoint))
-        .bearer_auth(config.recovery_key.as_str())
+        .bearer_auth(config.bearer()?)
         .json(&serde_json::json!({ "pinned": pinned }))
         .send()
         .await
@@ -654,7 +891,7 @@ pub async fn delete_cloud_backup(
     let config = load_config(&app, &state)?;
     let response = client()?
         .delete(format!("{}/v1/backups/{backup_id}", config.endpoint))
-        .bearer_auth(config.recovery_key.as_str())
+        .bearer_auth(config.bearer()?)
         .send()
         .await
         .map_err(|error| format!("无法连接云端：{error}"))?;
@@ -734,5 +971,34 @@ mod tests {
             normalize_endpoint("https://example.workers.dev/").unwrap(),
             "https://example.workers.dev"
         );
+    }
+
+    #[test]
+    fn legacy_cloud_config_remains_readable_before_account_login() {
+        let stored: StoredCloudConfig = serde_json::from_str(
+            r#"{"endpoint":"https://example.workers.dev","deviceId":"device-1","encryptedRecoveryKey":"ciphertext","nonce":"nonce"}"#,
+        )
+        .unwrap();
+        assert_eq!(stored.device_id, "device-1");
+        assert!(stored.account_id.is_none());
+        assert!(stored.encrypted_access_token.is_none());
+    }
+
+    #[test]
+    fn logged_out_account_cannot_fall_back_to_legacy_authentication() {
+        let logged_out = CloudConfig {
+            endpoint: "https://example.workers.dev".into(),
+            device_id: "device-1".into(),
+            recovery_key: Zeroizing::new("legacy-recovery-key".into()),
+            account_id: Some("account-1".into()),
+            access_token: None,
+        };
+        assert_eq!(logged_out.bearer().unwrap_err(), "请先登录云账号");
+
+        let legacy = CloudConfig {
+            account_id: None,
+            ..logged_out
+        };
+        assert_eq!(legacy.bearer().unwrap(), "legacy-recovery-key");
     }
 }

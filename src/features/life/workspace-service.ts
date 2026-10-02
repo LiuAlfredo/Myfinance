@@ -89,6 +89,15 @@ export interface CloudBackupStatus {
   currentRevision: number;
   lastBackupRevision: number;
   running: boolean;
+  signedIn: boolean;
+  username: string | null;
+  accountId: string | null;
+  sessionExpiresAt: number | null;
+}
+export interface CloudAccountInfo {
+  accountId: string;
+  username: string;
+  expiresAt: number;
 }
 export interface CloudBackupPolicy {
   enabled: boolean;
@@ -114,6 +123,20 @@ export const saveCloudBackupConfig = (input: {
   endpoint: string;
   recoveryKey: string;
 }) => workspaceCall<void>("save_cloud_backup_config", { input });
+export const registerCloudAccount = (input: {
+  endpoint: string;
+  username: string;
+  password: string;
+  recoveryKey: string;
+}) => workspaceCall<CloudAccountInfo>("register_cloud_account", { input });
+export const loginCloudAccount = (input: {
+  endpoint: string;
+  username: string;
+  password: string;
+  recoveryKey: string;
+}) => workspaceCall<CloudAccountInfo>("login_cloud_account", { input });
+export const logoutCloudAccount = () =>
+  workspaceCall<void>("logout_cloud_account");
 export const cloudBackupStatus = () =>
   workspaceCall<CloudBackupStatus>("get_cloud_backup_status");
 export const testCloudBackup = () =>

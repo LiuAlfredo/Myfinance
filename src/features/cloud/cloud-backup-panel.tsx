@@ -6,10 +6,12 @@ import {
   cleanupCloudBackups,
   deleteCloudBackup,
   generateCloudRecoveryKey,
+  loginCloudAccount,
   listCloudBackups,
+  logoutCloudAccount,
   previewCloudBackup,
   restoreCloudBackup,
-  saveCloudBackupConfig,
+  registerCloudAccount,
   saveCloudBackupPolicy,
   setCloudBackupPinned,
   testCloudBackup,
@@ -30,6 +32,8 @@ export function CloudBackupPanel() {
   const [records, setRecords] = useState<CloudBackupRecord[]>([]);
   const [endpoint, setEndpoint] = useState(DEFAULT_ENDPOINT);
   const [recoveryKey, setRecoveryKey] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [showRecoveryKey, setShowRecoveryKey] = useState(false);
   const [policy, setPolicy] = useState<CloudBackupPolicy>({
     enabled: true,
@@ -48,9 +52,10 @@ export function CloudBackupPanel() {
   const load = useCallback(async () => {
     const current = await cloudBackupStatus();
     setStatus(current);
+    if (current.username) setUsername(current.username);
     setPolicy(current.policy);
-    setEndpoint((value) => value || current.endpoint || "");
-    if (current.configured) setRecords(await listCloudBackups());
+    setEndpoint(current.endpoint ?? DEFAULT_ENDPOINT);
+    if (current.signedIn) setRecords(await listCloudBackups());
     else setRecords([]);
   }, []);
 
@@ -98,8 +103,36 @@ export function CloudBackupPanel() {
             onChange={(event) => setEndpoint(event.target.value)}
           />
         </label>
+        {!status?.signedIn && (
+          <>
+            <label className="form-label">
+              云账号
+              <input
+                className="form-control"
+                autoComplete="username"
+                minLength={3}
+                maxLength={32}
+                placeholder="3–32 位字母、数字、点、横线或下划线"
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+              />
+            </label>
+            <label className="form-label">
+              云账号密码
+              <input
+                className="form-control"
+                type="password"
+                autoComplete="current-password"
+                minLength={12}
+                maxLength={128}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+              />
+            </label>
+          </>
+        )}
         <label className="form-label">
-          {status?.configured ? "输入恢复密钥以重新配置" : "恢复密钥"}
+          {status?.configured ? "恢复密钥（本机已有时可留空）" : "恢复密钥"}
           <input
             className="form-control"
             type={showRecoveryKey ? "text" : "password"}
@@ -144,7 +177,7 @@ export function CloudBackupPanel() {
           </Button>
         </div>
         <p className="text-xs text-[var(--danger)] md:col-span-2">
-          丢失恢复密钥后，云端密文无法恢复。密钥只加密保存在本机，不会上传到 Cloudflare。
+          云账号密码用于登录，恢复密钥用于解密数据。丢失恢复密钥后，已有云端密文无法恢复。
         </p>
         <div className="rounded-lg border border-[var(--border)] p-3 md:col-span-2">
           <label className="flex items-center gap-2 text-sm font-medium">
@@ -226,27 +259,79 @@ export function CloudBackupPanel() {
           </Button>
         </div>
         <div className="flex flex-wrap gap-2 md:col-span-2">
-          <Button
-            disabled={!endpoint.trim() || !recoveryKey.trim()}
-            onClick={() =>
-              void action(async () => {
-                await saveCloudBackupConfig({
-                  endpoint: endpoint.trim(),
-                  recoveryKey: recoveryKey.trim(),
-                });
-                await testCloudBackup();
-                setRecoveryKey("");
-                setShowRecoveryKey(false);
-                await load();
-                showToast("云备份配置已保存并验证");
-              })
-            }
-          >
-            保存并测试
-          </Button>
+          {!status?.signedIn && (
+            <>
+              <Button
+                disabled={
+                  !endpoint.trim() ||
+                  !username.trim() ||
+                  password.length < 12 ||
+                  (!status?.configured && !recoveryKey.trim())
+                }
+                onClick={() =>
+                  void action(async () => {
+                    await registerCloudAccount({
+                      endpoint: endpoint.trim(),
+                      username: username.trim(),
+                      password,
+                      recoveryKey: recoveryKey.trim(),
+                    });
+                    setPassword("");
+                    setRecoveryKey("");
+                    setShowRecoveryKey(false);
+                    await load();
+                    showToast("云账号注册成功，历史备份已关联");
+                  })
+                }
+              >
+                注册账号
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={
+                  !endpoint.trim() ||
+                  !username.trim() ||
+                  password.length < 12 ||
+                  (!status?.configured && !recoveryKey.trim())
+                }
+                onClick={() =>
+                  void action(async () => {
+                    await loginCloudAccount({
+                      endpoint: endpoint.trim(),
+                      username: username.trim(),
+                      password,
+                      recoveryKey: recoveryKey.trim(),
+                    });
+                    setPassword("");
+                    setRecoveryKey("");
+                    setShowRecoveryKey(false);
+                    await load();
+                    showToast("云账号登录成功");
+                  })
+                }
+              >
+                登录
+              </Button>
+            </>
+          )}
+          {status?.signedIn && (
+            <Button
+              variant="secondary"
+              onClick={() =>
+                void action(async () => {
+                  await logoutCloudAccount();
+                  setRecords([]);
+                  await load();
+                  showToast("已退出云账号");
+                })
+              }
+            >
+              退出云账号
+            </Button>
+          )}
           <Button
             variant="secondary"
-            disabled={!status?.configured}
+            disabled={!status?.signedIn}
             onClick={() =>
               void action(async () => {
                 await testCloudBackup();
@@ -258,7 +343,7 @@ export function CloudBackupPanel() {
           </Button>
           <Button
             variant="secondary"
-            disabled={!status?.configured}
+            disabled={!status?.signedIn}
             onClick={() =>
               void action(async () => {
                 await flushAllNotes();
@@ -272,7 +357,7 @@ export function CloudBackupPanel() {
           </Button>
           <Button
             variant="secondary"
-            disabled={!status?.configured}
+            disabled={!status?.signedIn}
             onClick={() =>
               void action(async () => {
                 const candidates = await cleanupCloudBackups(true);
@@ -293,7 +378,12 @@ export function CloudBackupPanel() {
         </div>
       </fieldset>
       <div className="text-sm text-[var(--text-secondary)]">
-        状态：{status?.configured ? "已配置" : "未配置"}
+        状态：
+        {status?.signedIn
+          ? `已登录 ${status.username}`
+          : status?.configured
+            ? "等待登录云账号"
+            : "未配置"}
         {status?.lastSuccess
           ? ` · 最近成功 ${new Date(status.lastSuccess).toLocaleString()}`
           : ""}
@@ -307,7 +397,7 @@ export function CloudBackupPanel() {
         </p>
       )}
       <div className="max-h-72 overflow-auto">
-        {records.length === 0 && status?.configured ? (
+        {records.length === 0 && status?.signedIn ? (
           <p className="text-sm text-[var(--text-tertiary)]">云端暂无备份。</p>
         ) : null}
         {records.map((record) => (
