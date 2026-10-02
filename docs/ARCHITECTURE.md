@@ -25,6 +25,16 @@ AI
 
 当前实现不能阻碍未来模块扩展。
 
+账号登录后，Rust 后端根据服务端 `accountId` 选择独立工作目录：
+
+```text
+app-data/
+├── identity.sqlite3
+└── profiles/<accountId>/myfinance.sqlite3
+```
+
+`identity.sqlite3` 只保存本机账号索引和设备标识。所有业务命令仍通过统一数据库入口访问当前账号数据库，前端不能指定数据库路径。
+
 ---
 
 # 2. Overall Architecture

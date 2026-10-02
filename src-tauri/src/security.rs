@@ -9,6 +9,7 @@ use argon2::{
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use rand::{rngs::OsRng, RngCore};
 use rusqlite::{params, OptionalExtension};
+use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use zeroize::Zeroizing;
@@ -119,6 +120,19 @@ fn password_is_valid(password: &str, encoded: &str) -> bool {
         .is_some()
 }
 
+pub(crate) fn database_password_valid(path: &Path, password: &str) -> Result<bool, String> {
+    let connection = rusqlite::Connection::open(path).map_err(|error| error.to_string())?;
+    let hash = connection
+        .query_row(
+            "SELECT password_hash FROM app_security WHERE id=1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    Ok(hash.is_some_and(|value| password_is_valid(password, &value)))
+}
+
 pub(crate) fn wrap_data_key(
     password: &str,
     data_key: &[u8],
@@ -166,7 +180,10 @@ pub(crate) fn unwrap_data_key(
         .map_err(|_| "密码不正确或安全配置已损坏".to_string())
 }
 
-fn initialize_security(app: &tauri::AppHandle, password: &str) -> Result<Vec<u8>, String> {
+pub(crate) fn initialize_security(
+    app: &tauri::AppHandle,
+    password: &str,
+) -> Result<Vec<u8>, String> {
     if password.chars().count() < MIN_PASSWORD_LENGTH {
         return Err("软件密码至少需要 12 位".into());
     }
@@ -199,48 +216,32 @@ fn initialize_security(app: &tauri::AppHandle, password: &str) -> Result<Vec<u8>
     Ok(data_key)
 }
 
-#[tauri::command]
-pub fn app_password_setup_required(app: tauri::AppHandle) -> Result<bool, String> {
-    let connection = connect(&app).map_err(|error| error.to_string())?;
-    let exists: bool = connection
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM app_security WHERE id=1)",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(|error| error.to_string())?;
-    Ok(!exists)
-}
-
-#[tauri::command]
-pub fn setup_app_password(
-    app: tauri::AppHandle,
-    state: tauri::State<SecurityState>,
-    password: String,
+pub(crate) fn setup_profile_security(
+    app: &tauri::AppHandle,
+    state: &SecurityState,
+    password: &str,
 ) -> Result<(), String> {
-    let key = initialize_security(&app, &password)?;
+    let key = initialize_security(app, password)?;
     state.unlock_with(key)
 }
 
-#[tauri::command]
-pub fn verify_app_password(
-    app: tauri::AppHandle,
-    state: tauri::State<SecurityState>,
-    password: String,
+pub(crate) fn unlock_profile(
+    app: &tauri::AppHandle,
+    state: &SecurityState,
+    password: &str,
 ) -> Result<bool, String> {
-    let connection = connect(&app).map_err(|error| error.to_string())?;
+    let connection = connect(app).map_err(|error| error.to_string())?;
     let security = connection.query_row(
         "SELECT password_hash,wrap_salt,wrapped_data_key,wrap_nonce FROM app_security WHERE id=1",
         [],
         |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, String>(3)?)),
     ).optional().map_err(|error| error.to_string())?;
-
     let data_key = match security {
         Some((hash, salt, wrapped, nonce)) => {
-            if !password_is_valid(&password, &hash) {
+            if !password_is_valid(password, &hash) {
                 return Ok(false);
             }
-            unwrap_data_key(&password, &salt, &wrapped, &nonce)?
+            unwrap_data_key(password, &salt, &wrapped, &nonce)?
         }
         None => return Ok(false),
     };
@@ -248,17 +249,16 @@ pub fn verify_app_password(
     Ok(true)
 }
 
-#[tauri::command]
-pub fn change_app_password(
-    app: tauri::AppHandle,
-    state: tauri::State<SecurityState>,
-    current_password: String,
-    new_password: String,
+pub(crate) fn rewrap_profile_password(
+    app: &tauri::AppHandle,
+    state: &SecurityState,
+    current_password: &str,
+    new_password: &str,
 ) -> Result<bool, String> {
     if new_password.chars().count() < MIN_PASSWORD_LENGTH {
         return Err("新密码至少需要 12 位".to_string());
     }
-    let connection = connect(&app).map_err(|error| error.to_string())?;
+    let connection = connect(app).map_err(|error| error.to_string())?;
     let security = connection.query_row(
         "SELECT password_hash,wrap_salt,wrapped_data_key,wrap_nonce FROM app_security WHERE id=1",
         [],
@@ -267,12 +267,12 @@ pub fn change_app_password(
     let Some((hash, salt, wrapped, nonce)) = security else {
         return Err("安全配置尚未初始化".to_string());
     };
-    if !password_is_valid(&current_password, &hash) {
+    if !password_is_valid(current_password, &hash) {
         return Ok(false);
     }
-    let data_key = unwrap_data_key(&current_password, &salt, &wrapped, &nonce)?;
-    let (new_salt, new_wrapped, new_nonce) = wrap_data_key(&new_password, &data_key)?;
-    let new_hash = password_hash(&new_password)?;
+    let data_key = unwrap_data_key(current_password, &salt, &wrapped, &nonce)?;
+    let (new_salt, new_wrapped, new_nonce) = wrap_data_key(new_password, &data_key)?;
+    let new_hash = password_hash(new_password)?;
     connection.execute(
         "UPDATE app_security SET password_hash=?1,wrap_salt=?2,wrapped_data_key=?3,wrap_nonce=?4,updated_at=?5 WHERE id=1",
         params![new_hash, new_salt, new_wrapped, new_nonce, now()],
@@ -309,11 +309,6 @@ pub fn unlock_password_vault(
 #[tauri::command]
 pub fn lock_password_vault(state: tauri::State<SecurityState>) -> Result<(), String> {
     state.revoke_vault()
-}
-
-#[tauri::command]
-pub fn lock_private_data(state: tauri::State<SecurityState>) -> Result<(), String> {
-    state.lock()
 }
 
 #[cfg(test)]

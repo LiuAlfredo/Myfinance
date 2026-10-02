@@ -18,7 +18,7 @@ use zeroize::Zeroizing;
 
 use crate::{
     backup_management::BackupPreview,
-    database::{connect, id, now},
+    database::{connect, id, now, ProfileOperationGuard},
     security::SecurityState,
 };
 
@@ -30,6 +30,8 @@ const POLICY_KEY: &str = "cloud_backup_policy";
 const MAGIC: &[u8; 8] = b"MFCLD1\0\0";
 const MAX_DOWNLOAD_BYTES: usize = 20 * 1024 * 1024;
 const MIN_RECOVERY_KEY_LENGTH: usize = 24;
+pub(crate) const DEFAULT_ENDPOINT: &str =
+    "https://myfinance-cloud-backup.liuzheng85857.workers.dev";
 static CLOUD_BACKUP_RUNNING: AtomicBool = AtomicBool::new(false);
 
 struct BackupRunGuard;
@@ -106,11 +108,11 @@ pub struct CloudAccountInput {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct CloudAccountSession {
-    account_id: String,
-    username: String,
-    token: String,
-    expires_at: i64,
+pub(crate) struct CloudAccountSession {
+    pub(crate) account_id: String,
+    pub(crate) username: String,
+    pub(crate) token: String,
+    pub(crate) expires_at: i64,
 }
 
 #[derive(Serialize)]
@@ -461,7 +463,45 @@ async fn authenticate_cloud_account(
     action: &str,
 ) -> Result<CloudAccountInfo, String> {
     let endpoint = normalize_endpoint(&input.endpoint)?;
-    let username = input.username.trim().to_lowercase();
+    let existing = setting(app, CONFIG_KEY)?
+        .and_then(|raw| serde_json::from_str::<StoredCloudConfig>(&raw).ok());
+    let device_id = existing
+        .as_ref()
+        .map(|value| value.device_id.clone())
+        .unwrap_or_else(id);
+    let session = request_account_session(
+        &endpoint,
+        &input.username,
+        &input.password,
+        &device_id,
+        action,
+    )
+    .await?;
+    install_account_session(
+        app,
+        state,
+        &endpoint,
+        device_id,
+        &session,
+        (!input.recovery_key.trim().is_empty()).then_some(input.recovery_key.trim()),
+    )
+    .await?;
+    Ok(CloudAccountInfo {
+        account_id: session.account_id,
+        username: session.username,
+        expires_at: session.expires_at,
+    })
+}
+
+pub(crate) async fn request_account_session(
+    endpoint: &str,
+    username: &str,
+    password: &str,
+    device_id: &str,
+    action: &str,
+) -> Result<CloudAccountSession, String> {
+    let endpoint = normalize_endpoint(endpoint)?;
+    let username = username.trim().to_lowercase();
     if username.len() < 3
         || username.len() > 32
         || !username
@@ -470,31 +510,17 @@ async fn authenticate_cloud_account(
     {
         return Err("账号须为 3–32 位字母、数字、点、横线或下划线".into());
     }
-    if input.password.chars().count() < 12 || input.password.chars().count() > 128 {
+    if password.chars().count() < 12 || password.chars().count() > 128 {
         return Err("云账号密码须为 12–128 位".into());
     }
-    let existing = setting(app, CONFIG_KEY)?
-        .and_then(|raw| serde_json::from_str::<StoredCloudConfig>(&raw).ok());
-    let needs_legacy_claim = existing
-        .as_ref()
-        .is_some_and(|value| value.account_id.is_none());
-    let device_id = existing
-        .as_ref()
-        .map(|value| value.device_id.clone())
-        .unwrap_or_else(id);
-    let recovery_key = if input.recovery_key.trim().is_empty() {
-        load_config(app, state)?.recovery_key
-    } else {
-        Zeroizing::new(input.recovery_key.trim().to_string())
-    };
-    if recovery_key.chars().count() < MIN_RECOVERY_KEY_LENGTH {
-        return Err("恢复密钥至少需要 24 位".into());
+    if action != "register" && action != "login" {
+        return Err("账号操作无效".into());
     }
     let response = client()?
         .post(format!("{endpoint}/v1/auth/{action}"))
         .json(&serde_json::json!({
             "username": username,
-            "password": input.password,
+            "password": password,
             "deviceId": device_id,
         }))
         .send()
@@ -503,10 +529,85 @@ async fn authenticate_cloud_account(
     if !response.status().is_success() {
         return Err(response_error(response).await);
     }
-    let session = response
+    response
         .json::<CloudAccountSession>()
         .await
-        .map_err(|_| "云端返回了无效的登录信息".to_string())?;
+        .map_err(|_| "云端返回了无效的登录信息".to_string())
+}
+
+pub(crate) async fn account_has_backups(
+    endpoint: &str,
+    session: &CloudAccountSession,
+) -> Result<bool, String> {
+    let endpoint = normalize_endpoint(endpoint)?;
+    let response = client()?
+        .get(format!("{endpoint}/v1/backups"))
+        .bearer_auth(&session.token)
+        .send()
+        .await
+        .map_err(|error| format!("无法连接云端：{error}"))?;
+    if !response.status().is_success() {
+        return Err(response_error(response).await);
+    }
+    response
+        .json::<BackupList>()
+        .await
+        .map(|value| !value.backups.is_empty())
+        .map_err(|_| "云端返回了无效的备份列表".to_string())
+}
+
+pub(crate) async fn change_account_password(
+    app: &tauri::AppHandle,
+    state: &SecurityState,
+    current_password: &str,
+    new_password: &str,
+) -> Result<(), String> {
+    let config = load_config(app, state)?;
+    let response = client()?
+        .post(format!("{}/v1/auth/change-password", config.endpoint))
+        .bearer_auth(config.bearer()?)
+        .json(&serde_json::json!({
+            "currentPassword": current_password,
+            "newPassword": new_password,
+        }))
+        .send()
+        .await
+        .map_err(|error| format!("无法连接云端：{error}"))?;
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(response_error(response).await)
+    }
+}
+
+pub(crate) async fn install_account_session(
+    app: &tauri::AppHandle,
+    state: &SecurityState,
+    endpoint: &str,
+    device_id: String,
+    session: &CloudAccountSession,
+    preferred_recovery_key: Option<&str>,
+) -> Result<Option<String>, String> {
+    if crate::database::active_account_id()? != session.account_id {
+        return Err("云账号与当前本地账号不一致，请退出后切换账号".into());
+    }
+    let endpoint = normalize_endpoint(endpoint)?;
+    let existing = setting(app, CONFIG_KEY)?
+        .and_then(|raw| serde_json::from_str::<StoredCloudConfig>(&raw).ok());
+    let needs_legacy_claim = existing
+        .as_ref()
+        .is_some_and(|value| value.account_id.is_none());
+    let generated_recovery_key = existing.is_none() && preferred_recovery_key.is_none();
+    let recovery_key = if existing.is_some() {
+        load_config(app, state)?.recovery_key
+    } else if let Some(value) = preferred_recovery_key {
+        Zeroizing::new(value.to_string())
+    } else {
+        Zeroizing::new(generate_cloud_recovery_key())
+    };
+    if recovery_key.chars().count() < MIN_RECOVERY_KEY_LENGTH {
+        return Err("恢复密钥至少需要 24 位".into());
+    }
     let data_key = state.key()?;
     let (encrypted_recovery_key, nonce) = encrypt_secret(recovery_key.as_bytes(), &data_key)?;
     let (encrypted_access_token, access_nonce) =
@@ -542,11 +643,7 @@ async fn authenticate_cloud_account(
         CONFIG_KEY,
         &serde_json::to_string(&stored).map_err(|error| error.to_string())?,
     )?;
-    Ok(CloudAccountInfo {
-        account_id: session.account_id,
-        username: session.username,
-        expires_at: session.expires_at,
-    })
+    Ok(generated_recovery_key.then(|| recovery_key.to_string()))
 }
 
 #[tauri::command]
@@ -555,6 +652,7 @@ pub async fn register_cloud_account(
     state: tauri::State<'_, SecurityState>,
     input: CloudAccountInput,
 ) -> Result<CloudAccountInfo, String> {
+    let _profile_guard = ProfileOperationGuard::acquire()?;
     authenticate_cloud_account(&app, &state, input, "register").await
 }
 
@@ -564,6 +662,7 @@ pub async fn login_cloud_account(
     state: tauri::State<'_, SecurityState>,
     input: CloudAccountInput,
 ) -> Result<CloudAccountInfo, String> {
+    let _profile_guard = ProfileOperationGuard::acquire()?;
     authenticate_cloud_account(&app, &state, input, "login").await
 }
 
@@ -572,6 +671,7 @@ pub async fn logout_cloud_account(
     app: tauri::AppHandle,
     state: tauri::State<'_, SecurityState>,
 ) -> Result<(), String> {
+    let _profile_guard = ProfileOperationGuard::acquire()?;
     let config = load_config(&app, &state)?;
     if config.access_token.is_some() {
         let response = client()?
@@ -651,6 +751,7 @@ pub async fn test_cloud_backup(
     app: tauri::AppHandle,
     state: tauri::State<'_, SecurityState>,
 ) -> Result<(), String> {
+    let _profile_guard = ProfileOperationGuard::acquire()?;
     let config = load_config(&app, &state)?;
     let response = client()?
         .get(format!("{}/v1/backups", config.endpoint))
@@ -670,6 +771,7 @@ pub async fn list_cloud_backups(
     app: tauri::AppHandle,
     state: tauri::State<'_, SecurityState>,
 ) -> Result<Vec<CloudBackupRecord>, String> {
+    let _profile_guard = ProfileOperationGuard::acquire()?;
     let config = load_config(&app, &state)?;
     let response = client()?
         .get(format!("{}/v1/backups", config.endpoint))
@@ -692,6 +794,7 @@ async fn run_cleanup(
     state: &SecurityState,
     dry_run: bool,
 ) -> Result<CleanupResult, String> {
+    let _profile_guard = ProfileOperationGuard::acquire()?;
     let config = load_config(app, state)?;
     let policy = policy(app)?;
     let path = if dry_run {
@@ -724,6 +827,7 @@ async fn upload_cloud_backup_kind(
     state: &SecurityState,
     backup_kind: &str,
 ) -> Result<CloudBackupRecord, String> {
+    let _profile_guard = ProfileOperationGuard::acquire()?;
     let _guard = BackupRunGuard::acquire()?;
     let result = async {
         let config = load_config(app, state)?;
@@ -867,6 +971,7 @@ pub async fn set_cloud_backup_pinned(
     backup_id: String,
     pinned: bool,
 ) -> Result<(), String> {
+    let _profile_guard = ProfileOperationGuard::acquire()?;
     let config = load_config(&app, &state)?;
     let response = client()?
         .patch(format!("{}/v1/backups/{backup_id}", config.endpoint))
@@ -888,6 +993,7 @@ pub async fn delete_cloud_backup(
     state: tauri::State<'_, SecurityState>,
     backup_id: String,
 ) -> Result<(), String> {
+    let _profile_guard = ProfileOperationGuard::acquire()?;
     let config = load_config(&app, &state)?;
     let response = client()?
         .delete(format!("{}/v1/backups/{backup_id}", config.endpoint))
@@ -923,6 +1029,7 @@ pub async fn preview_cloud_backup(
     state: tauri::State<'_, SecurityState>,
     backup_id: String,
 ) -> Result<BackupPreview, String> {
+    let _profile_guard = ProfileOperationGuard::acquire()?;
     let path = materialize_backup(&app, &state, &backup_id).await?;
     let result = crate::backup_management::preview_path(&path);
     let _ = std::fs::remove_file(path);
@@ -935,6 +1042,7 @@ pub async fn restore_cloud_backup(
     state: tauri::State<'_, SecurityState>,
     backup_id: String,
 ) -> Result<(), String> {
+    let _profile_guard = ProfileOperationGuard::acquire()?;
     let path = materialize_backup(&app, &state, &backup_id).await?;
     let current = crate::database::path(&app).map_err(|error| error.to_string())?;
     let result = crate::database_backup::restore(&current, &path);

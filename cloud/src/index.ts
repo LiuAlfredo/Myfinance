@@ -298,6 +298,55 @@ async function logoutAccount(request: Request, context: AuthContext, env: Env): 
   return json({ ok: true });
 }
 
+async function changeAccountPassword(
+  request: Request,
+  context: AuthContext,
+  env: Env,
+): Promise<Response> {
+  if (!context.accountId) return json({ error: "account login required" }, 401);
+  let input: { currentPassword?: unknown; newPassword?: unknown };
+  try {
+    input = await request.json();
+  } catch {
+    return json({ error: "invalid password request" }, 400);
+  }
+  const validPassword = (value: unknown): value is string =>
+    typeof value === "string" &&
+    value.length >= 12 &&
+    value.length <= 128 &&
+    new TextEncoder().encode(value).byteLength <= 256;
+  if (!validPassword(input.currentPassword) || !validPassword(input.newPassword)) {
+    return json({ error: "invalid password request" }, 400);
+  }
+  const account = await env.DB.prepare(
+    "SELECT password_hash,password_salt,password_iterations FROM accounts WHERE id=?1",
+  )
+    .bind(context.accountId)
+    .first<{ password_hash: string; password_salt: string; password_iterations: number }>();
+  if (!account) return json({ error: "account not found" }, 404);
+  const currentHash = await passwordHash(
+    input.currentPassword,
+    account.password_salt,
+    account.password_iterations,
+    env.PASSWORD_PEPPER,
+  );
+  if (!constantTimeEqual(currentHash, account.password_hash)) {
+    return json({ error: "invalid account or password" }, 401);
+  }
+  const salt = randomToken(16);
+  const hash = await passwordHash(input.newPassword, salt, PASSWORD_ITERATIONS, env.PASSWORD_PEPPER);
+  const currentTokenHash = await sha256((request.headers.get("authorization") ?? "").slice(7));
+  await env.DB.batch([
+    env.DB.prepare(
+      "UPDATE accounts SET password_hash=?2,password_salt=?3,password_iterations=?4 WHERE id=?1",
+    ).bind(context.accountId, hash, salt, PASSWORD_ITERATIONS),
+    env.DB.prepare(
+      "UPDATE sessions SET revoked=1 WHERE account_id=?1 AND token_hash<>?2",
+    ).bind(context.accountId, currentTokenHash),
+  ]);
+  return json({ ok: true });
+}
+
 async function claimLegacy(request: Request, context: AuthContext, env: Env): Promise<Response> {
   if (!context.accountId) return json({ error: "account login required" }, 401);
   const legacyToken = request.headers.get("x-legacy-token") ?? "";
@@ -573,6 +622,9 @@ export default {
     }
     if (request.method === "POST" && url.pathname === "/v1/auth/logout") {
       return logoutAccount(request, context, env);
+    }
+    if (request.method === "POST" && url.pathname === "/v1/auth/change-password") {
+      return changeAccountPassword(request, context, env);
     }
     if (request.method === "POST" && url.pathname === "/v1/auth/claim-legacy") {
       return claimLegacy(request, context, env);

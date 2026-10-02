@@ -84,8 +84,7 @@ export function ModulesPage() {
           <Button
             variant="ghost"
             onClick={() => {
-              void logout();
-              navigate("/login", { replace: true });
+              void logout().then(() => navigate("/login", { replace: true }));
             }}
           >
             <LogOut className="size-4" />

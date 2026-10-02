@@ -36,6 +36,7 @@ checksums.
 - `POST /v1/auth/login` verifies the password and creates a new session.
 - `GET /v1/auth/me` validates the current session.
 - `POST /v1/auth/logout` revokes the current session.
+- `POST /v1/auth/change-password` verifies the current password, changes it, and revokes other device sessions.
 - `POST /v1/auth/claim-legacy` assigns unclaimed backups during the v0.5 upgrade.
 
 Passwords use PBKDF2-HMAC-SHA256 with a random salt, the Cloudflare Web Crypto

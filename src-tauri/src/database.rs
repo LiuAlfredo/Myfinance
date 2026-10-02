@@ -1,15 +1,105 @@
 use rusqlite::{Connection, Result};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    OnceLock, RwLock,
+};
 use tauri::Manager;
 
-pub fn path(app: &tauri::AppHandle) -> Result<PathBuf> {
+static ACTIVE_PROFILE: OnceLock<RwLock<Option<String>>> = OnceLock::new();
+static ACTIVE_PROFILE_OPERATIONS: AtomicUsize = AtomicUsize::new(0);
+
+pub struct ProfileOperationGuard;
+
+impl ProfileOperationGuard {
+    pub fn acquire() -> std::result::Result<Self, String> {
+        active_account_id()?;
+        ACTIVE_PROFILE_OPERATIONS.fetch_add(1, Ordering::AcqRel);
+        Ok(Self)
+    }
+}
+
+impl Drop for ProfileOperationGuard {
+    fn drop(&mut self) {
+        ACTIVE_PROFILE_OPERATIONS.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+fn active_profile() -> &'static RwLock<Option<String>> {
+    ACTIVE_PROFILE.get_or_init(|| RwLock::new(None))
+}
+
+pub fn activate_profile(account_id: &str) -> std::result::Result<(), String> {
+    if account_id.len() != 36
+        || !account_id
+            .chars()
+            .all(|value| value.is_ascii_hexdigit() || value == '-')
+    {
+        return Err("账号标识无效".into());
+    }
+    let account_id = account_id.to_lowercase();
+    let mut active = active_profile()
+        .write()
+        .map_err(|_| "账号会话不可用".to_string())?;
+    if ACTIVE_PROFILE_OPERATIONS.load(Ordering::Acquire) > 0
+        && active.as_deref().is_some_and(|value| value != account_id)
+    {
+        return Err("账号数据操作正在执行，请完成后再切换账号".into());
+    }
+    *active = Some(account_id);
+    Ok(())
+}
+
+pub fn deactivate_profile() -> std::result::Result<(), String> {
+    if ACTIVE_PROFILE_OPERATIONS.load(Ordering::Acquire) > 0 {
+        return Err("账号数据操作正在执行，请完成后再退出".into());
+    }
+    *active_profile()
+        .write()
+        .map_err(|_| "账号会话不可用".to_string())? = None;
+    Ok(())
+}
+
+pub fn active_account_id() -> std::result::Result<String, String> {
+    active_profile()
+        .read()
+        .map_err(|_| "账号会话不可用".to_string())?
+        .clone()
+        .ok_or_else(|| "请先登录账号".to_string())
+}
+
+pub fn legacy_path(app: &tauri::AppHandle) -> Result<PathBuf> {
     let dir = app
         .path()
         .app_data_dir()
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     fs::create_dir_all(&dir).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     Ok(dir.join("myfinance.sqlite3"))
+}
+
+fn profile_database_path(root: &std::path::Path, account_id: &str) -> PathBuf {
+    root.join("profiles")
+        .join(account_id)
+        .join("myfinance.sqlite3")
+}
+
+pub fn path(app: &tauri::AppHandle) -> Result<PathBuf> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    let account_id = active_account_id()
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e))))?;
+    let database = profile_database_path(&dir, &account_id);
+    let profile = database.parent().ok_or_else(|| {
+        rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(
+            "账号数据库目录无效",
+        )))
+    })?;
+    fs::create_dir_all(&profile)
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    Ok(database)
 }
 
 pub fn connect(app: &tauri::AppHandle) -> Result<Connection> {
@@ -180,6 +270,15 @@ pub fn id() -> String {
 #[cfg(test)]
 mod migration_tests {
     use super::*;
+
+    #[test]
+    fn profile_database_paths_are_account_scoped() {
+        let root = std::path::Path::new("app-data");
+        let first = profile_database_path(root, "11111111-1111-1111-1111-111111111111");
+        let second = profile_database_path(root, "22222222-2222-2222-2222-222222222222");
+        assert_ne!(first, second);
+        assert!(first.ends_with("profiles/11111111-1111-1111-1111-111111111111/myfinance.sqlite3"));
+    }
     #[test]
     fn versioned_upgrade_is_repeatable_and_preserves_records() {
         let c = Connection::open_in_memory().unwrap();

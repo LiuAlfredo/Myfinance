@@ -46,8 +46,8 @@ export function PersonalSettingsPage() {
       setNewPassword("");
       setConfirmPassword("");
       setSuccess("密码已更新，下次登录请使用新密码");
-    } catch {
-      setError("密码保存失败，请稍后重试");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : typeof reason === "string" ? reason : "密码保存失败，请稍后重试");
     } finally {
       setIsSubmitting(false);
     }
@@ -66,10 +66,10 @@ export function PersonalSettingsPage() {
       <div className="mx-auto w-full max-w-3xl px-5 py-12 md:py-20">
         <p className="entry-eyebrow">PASSWORDS & SECURITY</p>
         <h1 className="mt-3 text-4xl font-semibold tracking-[-0.045em] text-[var(--text)]">密码与安全</h1>
-        <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">管理软件密码和其他平台的账号记录。</p>
+        <p className="mt-3 text-sm leading-6 text-[var(--text-secondary)]">管理账号登录密码和其他平台的账号记录。</p>
         <div className="mt-7 flex gap-3" role="tablist" aria-label="密码与安全">
           <button type="button" role="tab" aria-selected={section === "vault"} className={section === "vault" ? "button-primary rounded-xl px-4 py-2" : "rounded-xl border border-[var(--border)] px-4 py-2"} onClick={() => setSection("vault")}>平台密码库</button>
-          <button type="button" role="tab" aria-selected={section === "password"} className={section === "password" ? "button-primary rounded-xl px-4 py-2" : "rounded-xl border border-[var(--border)] px-4 py-2"} onClick={() => setSection("password")}>软件密码</button>
+          <button type="button" role="tab" aria-selected={section === "password"} className={section === "password" ? "button-primary rounded-xl px-4 py-2" : "rounded-xl border border-[var(--border)] px-4 py-2"} onClick={() => setSection("password")}>登录密码</button>
         </div>
         {section === "vault" ? <VaultPanel /> : (
 

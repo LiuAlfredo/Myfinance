@@ -7,6 +7,7 @@ mod journey;
 mod life;
 mod password_vault;
 mod private_calendar;
+mod profile_auth;
 mod security;
 mod workspace_search;
 
@@ -28,8 +29,8 @@ fn get_app_info() -> AppInfo {
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            database::initialize(app.handle())
-                .map_err(|e| format!("数据库升级失败，原数据保留：{e}"))?;
+            profile_auth::initialize(app.handle())
+                .map_err(|e| format!("本机账号索引初始化失败：{e}"))?;
             Ok(())
         })
         .manage(security::SecurityState::new())
@@ -37,6 +38,11 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             get_app_info,
+            profile_auth::get_profile_auth_status,
+            profile_auth::register_profile,
+            profile_auth::login_profile,
+            profile_auth::logout_profile,
+            profile_auth::change_profile_password,
             workspace_search::search_workspace,
             life::routines::list_task_routines,
             life::routines::save_task_routine,
@@ -68,11 +74,6 @@ pub fn run() {
             cloud_backup::delete_cloud_backup,
             cloud_backup::preview_cloud_backup,
             cloud_backup::restore_cloud_backup,
-            security::verify_app_password,
-            security::app_password_setup_required,
-            security::setup_app_password,
-            security::change_app_password,
-            security::lock_private_data,
             security::unlock_password_vault,
             security::lock_password_vault,
             password_vault::list_vault_items,

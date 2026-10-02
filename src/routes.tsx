@@ -73,9 +73,10 @@ function FinanceRoutes() {
 
 export function AppRoutes() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const sessionGeneration = useAuthStore((state) => state.sessionGeneration);
   return (
     <Suspense fallback={<p className="p-8 text-center">正在加载页面…</p>}>
-      <Routes>
+      <Routes key={sessionGeneration}>
         <Route path="/login" element={<LoginPage />} />
         <Route
           path="/modules"
