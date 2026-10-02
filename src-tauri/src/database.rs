@@ -33,7 +33,7 @@ pub fn initialize(app: &tauri::AppHandle) -> Result<()> {
         [],
         |r| r.get(0),
     )?;
-    if populated && version < 8 {
+    if populated && version < 9 {
         let source = path(app)?;
         let destination = source.with_extension(format!("pre-upgrade-{}-{}.sqlite3", now(), id()));
         crate::database_backup::backup(&source, &destination).map_err(|e| {
@@ -50,7 +50,7 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         [],
         |r| r.get(0),
     )?;
-    if latest > 8 {
+    if latest > 9 {
         return Err(rusqlite::Error::InvalidQuery);
     }
     let tx = conn.unchecked_transaction()?;
@@ -79,6 +79,10 @@ pub fn migrate(conn: &Connection) -> Result<()> {
         (
             8,
             include_str!("../migrations/008_finance_ledger_links.sql"),
+        ),
+        (
+            9,
+            include_str!("../migrations/009_cloud_backup_revision.sql"),
         ),
     ] {
         let applied: bool = tx.query_row(
@@ -202,7 +206,7 @@ mod migration_tests {
             c.query_row("SELECT COUNT(*) FROM schema_migrations", [], |r| r
                 .get::<_, i64>(0))
                 .unwrap(),
-            8
+            9
         );
     }
     #[test]
@@ -234,8 +238,33 @@ mod migration_tests {
     fn refuses_newer_database_version() {
         let c = Connection::open_in_memory().unwrap();
         migrate(&c).unwrap();
-        c.execute("INSERT INTO schema_migrations VALUES(9,0)", [])
+        c.execute("INSERT INTO schema_migrations VALUES(10,0)", [])
             .unwrap();
         assert!(migrate(&c).is_err());
+    }
+
+    #[test]
+    fn cloud_revision_tracks_business_create_update_and_delete() {
+        let c = Connection::open_in_memory().unwrap();
+        migrate(&c).unwrap();
+        let initial: i64 = c
+            .query_row(
+                "SELECT revision FROM cloud_change_state WHERE id=1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        c.execute("INSERT INTO accounts(id,name,institution,type,currency,initial_balance,is_active,created_at,updated_at) VALUES('a','现金','','CASH','CNY',0,1,1,1)", []).unwrap();
+        c.execute("UPDATE accounts SET name='钱包' WHERE id='a'", [])
+            .unwrap();
+        c.execute("DELETE FROM accounts WHERE id='a'", []).unwrap();
+        let current: i64 = c
+            .query_row(
+                "SELECT revision FROM cloud_change_state WHERE id=1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(current, initial + 3);
     }
 }

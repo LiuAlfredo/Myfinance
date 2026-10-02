@@ -2213,7 +2213,7 @@ dependencies = [
 
 [[package]]
 name = "myfinance"
-version = "0.4.1"
+version = "0.5.0"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -2230,6 +2230,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-updater",
+ "tokio",
  "uuid",
  "zeroize",
 ]

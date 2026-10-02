@@ -2,7 +2,11 @@ import { useUiStore } from "@/stores/ui-store";
 import { useEffect } from "react";
 import { useAuthStore } from "@/stores/auth-store";
 import { flushAllNotes } from "./note-save-queue";
-import { automaticBackup, workspaceCall } from "./workspace-service";
+import {
+  automaticBackup,
+  automaticCloudBackup,
+  workspaceCall,
+} from "./workspace-service";
 
 export function BackgroundMaintenance() {
   const toast = useUiStore((s) => s.showToast);
@@ -20,6 +24,7 @@ export function BackgroundMaintenance() {
           (async () => {
             await flushAllNotes();
             await automaticBackup();
+            await automaticCloudBackup();
           })(),
           workspaceCall("generate_routine_tasks"),
         ]);

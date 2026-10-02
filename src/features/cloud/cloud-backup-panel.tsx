@@ -3,15 +3,20 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import {
   cloudBackupStatus,
+  cleanupCloudBackups,
+  deleteCloudBackup,
   generateCloudRecoveryKey,
   listCloudBackups,
   previewCloudBackup,
   restoreCloudBackup,
   saveCloudBackupConfig,
+  saveCloudBackupPolicy,
+  setCloudBackupPinned,
   testCloudBackup,
   uploadCloudBackup,
   type BackupPreview,
   type CloudBackupRecord,
+  type CloudBackupPolicy,
   type CloudBackupStatus,
 } from "@/features/life/workspace-service";
 import { flushAllNotes } from "@/features/life/note-save-queue";
@@ -26,6 +31,12 @@ export function CloudBackupPanel() {
   const [endpoint, setEndpoint] = useState(DEFAULT_ENDPOINT);
   const [recoveryKey, setRecoveryKey] = useState("");
   const [showRecoveryKey, setShowRecoveryKey] = useState(false);
+  const [policy, setPolicy] = useState<CloudBackupPolicy>({
+    enabled: true,
+    intervalHours: 24,
+    retain: 10,
+    protectHours: 24,
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<{
@@ -37,6 +48,7 @@ export function CloudBackupPanel() {
   const load = useCallback(async () => {
     const current = await cloudBackupStatus();
     setStatus(current);
+    setPolicy(current.policy);
     setEndpoint((value) => value || current.endpoint || "");
     if (current.configured) setRecords(await listCloudBackups());
     else setRecords([]);
@@ -134,6 +146,85 @@ export function CloudBackupPanel() {
         <p className="text-xs text-[var(--danger)] md:col-span-2">
           丢失恢复密钥后，云端密文无法恢复。密钥只加密保存在本机，不会上传到 Cloudflare。
         </p>
+        <div className="rounded-lg border border-[var(--border)] p-3 md:col-span-2">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input
+              type="checkbox"
+              checked={policy.enabled}
+              onChange={(event) =>
+                setPolicy((value) => ({
+                  ...value,
+                  enabled: event.target.checked,
+                }))
+              }
+            />
+            自动上传云备份
+          </label>
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
+            <label className="form-label">
+              最短间隔（小时）
+              <input
+                className="form-control"
+                type="number"
+                min={1}
+                max={168}
+                value={policy.intervalHours}
+                onChange={(event) =>
+                  setPolicy((value) => ({
+                    ...value,
+                    intervalHours: Number(event.target.value),
+                  }))
+                }
+              />
+            </label>
+            <label className="form-label">
+              每台设备保留自动备份
+              <input
+                className="form-control"
+                type="number"
+                min={1}
+                max={100}
+                value={policy.retain}
+                onChange={(event) =>
+                  setPolicy((value) => ({
+                    ...value,
+                    retain: Number(event.target.value),
+                  }))
+                }
+              />
+            </label>
+            <label className="form-label">
+              新备份保护期（小时）
+              <input
+                className="form-control"
+                type="number"
+                min={1}
+                max={720}
+                value={policy.protectHours}
+                onChange={(event) =>
+                  setPolicy((value) => ({
+                    ...value,
+                    protectHours: Number(event.target.value),
+                  }))
+                }
+              />
+            </label>
+          </div>
+          <Button
+            className="mt-3"
+            type="button"
+            variant="secondary"
+            onClick={() =>
+              void action(async () => {
+                await saveCloudBackupPolicy(policy);
+                await load();
+                showToast("自动云备份策略已保存");
+              })
+            }
+          >
+            保存自动备份策略
+          </Button>
+        </div>
         <div className="flex flex-wrap gap-2 md:col-span-2">
           <Button
             disabled={!endpoint.trim() || !recoveryKey.trim()}
@@ -179,12 +270,35 @@ export function CloudBackupPanel() {
           >
             立即上传加密备份
           </Button>
+          <Button
+            variant="secondary"
+            disabled={!status?.configured}
+            onClick={() =>
+              void action(async () => {
+                const candidates = await cleanupCloudBackups(true);
+                if (candidates.length === 0) {
+                  showToast("当前没有需要清理的自动备份");
+                  return;
+                }
+                if (!window.confirm(`将删除 ${candidates.length} 份过期自动备份，是否继续？`))
+                  return;
+                await cleanupCloudBackups(false);
+                await load();
+                showToast(`已清理 ${candidates.length} 份过期自动备份`);
+              })
+            }
+          >
+            清理旧自动备份
+          </Button>
         </div>
       </fieldset>
       <div className="text-sm text-[var(--text-secondary)]">
         状态：{status?.configured ? "已配置" : "未配置"}
         {status?.lastSuccess
           ? ` · 最近成功 ${new Date(status.lastSuccess).toLocaleString()}`
+          : ""}
+        {status?.nextAt
+          ? ` · 下次最早 ${new Date(status.nextAt).toLocaleString()}`
           : ""}
       </div>
       {status?.lastError && (
@@ -205,24 +319,57 @@ export function CloudBackupPanel() {
               {new Date(record.createdAt).toLocaleString()} ·{" "}
               {(record.sourceSize / 1024).toFixed(1)} KB · 数据版本{" "}
               {record.schemaVersion}
+              {record.pinned ? " · 已固定" : ""}
             </div>
             <p className="mt-1 text-xs text-[var(--text-secondary)]">
-              设备 {record.deviceId.slice(0, 8)} · 密文{" "}
+              {record.backupKind === "AUTO" ? "自动备份" : "手动备份"} · 设备{" "}
+              {record.deviceId.slice(0, 8)} · 密文{" "}
               {(record.encryptedSize / 1024).toFixed(1)} KB
             </p>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              onClick={() =>
-                void action(async () => {
-                  const data = await previewCloudBackup(record.id);
-                  setPreview({ record, data });
-                })
-              }
-            >
-              校验与恢复
-            </Button>
+            <div className="mt-1 flex flex-wrap gap-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() =>
+                  void action(async () => {
+                    const data = await previewCloudBackup(record.id);
+                    setPreview({ record, data });
+                  })
+                }
+              >
+                校验与恢复
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() =>
+                  void action(async () => {
+                    await setCloudBackupPinned(record.id, !record.pinned);
+                    await load();
+                    showToast(record.pinned ? "已取消固定" : "备份已固定保留");
+                  })
+                }
+              >
+                {record.pinned ? "取消固定" : "固定保留"}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy || record.pinned}
+                onClick={() => {
+                  if (!window.confirm("确定永久删除这份云备份吗？")) return;
+                  void action(async () => {
+                    await deleteCloudBackup(record.id);
+                    await load();
+                    showToast("云备份已删除");
+                  });
+                }}
+              >
+                删除
+              </Button>
+            </div>
           </div>
         ))}
       </div>

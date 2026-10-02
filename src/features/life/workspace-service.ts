@@ -84,6 +84,17 @@ export interface CloudBackupStatus {
   deviceId: string | null;
   lastSuccess: number | null;
   lastError: string | null;
+  policy: CloudBackupPolicy;
+  nextAt: number | null;
+  currentRevision: number;
+  lastBackupRevision: number;
+  running: boolean;
+}
+export interface CloudBackupPolicy {
+  enabled: boolean;
+  intervalHours: number;
+  retain: number;
+  protectHours: number;
 }
 export interface CloudBackupRecord {
   id: string;
@@ -94,6 +105,8 @@ export interface CloudBackupRecord {
   sourceSize: number;
   schemaVersion: number;
   checksum: string;
+  backupKind: "AUTO" | "MANUAL" | "PRE_RESTORE";
+  pinned: boolean;
 }
 export const generateCloudRecoveryKey = () =>
   workspaceCall<string>("generate_cloud_recovery_key");
@@ -109,6 +122,18 @@ export const listCloudBackups = () =>
   workspaceCall<CloudBackupRecord[]>("list_cloud_backups");
 export const uploadCloudBackup = () =>
   workspaceCall<CloudBackupRecord>("upload_cloud_backup");
+export const automaticCloudBackup = (force = false) =>
+  workspaceCall<CloudBackupRecord | null>("run_automatic_cloud_backup", {
+    force,
+  });
+export const saveCloudBackupPolicy = (input: CloudBackupPolicy) =>
+  workspaceCall<void>("save_cloud_backup_policy", { input });
+export const cleanupCloudBackups = (dryRun = false) =>
+  workspaceCall<string[]>("cleanup_cloud_backups", { dryRun });
+export const setCloudBackupPinned = (backupId: string, pinned: boolean) =>
+  workspaceCall<void>("set_cloud_backup_pinned", { backupId, pinned });
+export const deleteCloudBackup = (backupId: string) =>
+  workspaceCall<void>("delete_cloud_backup", { backupId });
 export const previewCloudBackup = (backupId: string) =>
   workspaceCall<BackupPreview>("preview_cloud_backup", { backupId });
 export const restoreCloudBackup = (backupId: string) =>

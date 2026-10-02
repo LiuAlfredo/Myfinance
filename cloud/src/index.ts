@@ -12,6 +12,14 @@ interface BackupRow {
   source_size: number;
   schema_version: number;
   checksum: string;
+  backup_kind: "AUTO" | "MANUAL" | "PRE_RESTORE";
+  pinned: number;
+}
+
+interface CleanupInput {
+  deviceId: string;
+  retain: number;
+  protectHours: number;
 }
 
 const MAX_BACKUP_BYTES = 20 * 1024 * 1024;
@@ -19,6 +27,7 @@ const CHUNK_BYTES = 512 * 1024;
 const ID_PATTERN = /^[0-9a-f-]{36}$/i;
 const DEVICE_PATTERN = /^[0-9a-zA-Z._-]{1,80}$/;
 const CHECKSUM_PATTERN = /^[0-9a-f]{64}$/;
+const BACKUP_KINDS = new Set(["AUTO", "MANUAL", "PRE_RESTORE"]);
 
 function json(value: unknown, status = 200): Response {
   return Response.json(value, {
@@ -70,6 +79,7 @@ async function createBackup(request: Request, env: Env): Promise<Response> {
   const sourceSize = integerHeader(request, "x-source-size");
   const schemaVersion = integerHeader(request, "x-schema-version");
   const declaredSize = Number(request.headers.get("content-length") ?? "0");
+  const backupKind = (request.headers.get("x-backup-kind") ?? "MANUAL").toUpperCase();
 
   if (
     !ID_PATTERN.test(id) ||
@@ -77,7 +87,8 @@ async function createBackup(request: Request, env: Env): Promise<Response> {
     !CHECKSUM_PATTERN.test(checksum) ||
     createdAt === null ||
     sourceSize === null ||
-    schemaVersion === null
+    schemaVersion === null ||
+    !BACKUP_KINDS.has(backupKind)
   ) {
     return json({ error: "invalid backup metadata" }, 400);
   }
@@ -94,17 +105,22 @@ async function createBackup(request: Request, env: Env): Promise<Response> {
   }
 
   const uploadedAt = Date.now();
-  const existing = await env.DB.prepare("SELECT id FROM backups WHERE id = ?1")
+  const existing = await env.DB.prepare("SELECT id, checksum, status FROM backups WHERE id = ?1")
     .bind(id)
-    .first();
-  if (existing) return json({ error: "backup already exists" }, 409);
+    .first<{ id: string; checksum: string; status: string }>();
+  if (existing) {
+    if (existing.checksum === checksum && existing.status === "COMPLETE") {
+      return json({ id, uploadedAt, duplicate: true });
+    }
+    return json({ error: "backup already exists" }, 409);
+  }
 
   const chunkCount = Math.ceil(body.byteLength / CHUNK_BYTES);
   try {
     await env.DB.prepare(
       `INSERT INTO backups
-       (id, device_id, created_at, uploaded_at, encrypted_size, source_size, schema_version, checksum, chunk_count, status)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'UPLOADING')`,
+       (id, device_id, created_at, uploaded_at, encrypted_size, source_size, schema_version, checksum, chunk_count, status, backup_kind, pinned)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 'UPLOADING', ?10, 0)`,
     )
       .bind(
         id,
@@ -116,6 +132,7 @@ async function createBackup(request: Request, env: Env): Promise<Response> {
         schemaVersion,
         checksum,
         chunkCount,
+        backupKind,
       )
       .run();
     const bytes = new Uint8Array(body);
@@ -139,7 +156,7 @@ async function createBackup(request: Request, env: Env): Promise<Response> {
 async function listBackups(env: Env): Promise<Response> {
   const result = await env.DB.prepare(
     `SELECT id, device_id, created_at, uploaded_at, encrypted_size,
-            source_size, schema_version, checksum
+            source_size, schema_version, checksum, backup_kind, pinned
      FROM backups WHERE status = 'COMPLETE' ORDER BY created_at DESC LIMIT 50`,
   ).all<BackupRow>();
   return json({
@@ -152,8 +169,81 @@ async function listBackups(env: Env): Promise<Response> {
       sourceSize: row.source_size,
       schemaVersion: row.schema_version,
       checksum: row.checksum,
+      backupKind: row.backup_kind,
+      pinned: row.pinned === 1,
     })),
   });
+}
+
+function validCleanupInput(value: unknown): value is CleanupInput {
+  if (!value || typeof value !== "object") return false;
+  const input = value as Partial<CleanupInput>;
+  return (
+    typeof input.deviceId === "string" &&
+    DEVICE_PATTERN.test(input.deviceId) &&
+    Number.isInteger(input.retain) &&
+    Number(input.retain) >= 1 &&
+    Number(input.retain) <= 100 &&
+    Number.isInteger(input.protectHours) &&
+    Number(input.protectHours) >= 1 &&
+    Number(input.protectHours) <= 720
+  );
+}
+
+async function cleanupBackups(request: Request, env: Env, dryRun: boolean): Promise<Response> {
+  let input: unknown;
+  try {
+    input = await request.json();
+  } catch {
+    return json({ error: "invalid cleanup request" }, 400);
+  }
+  if (!validCleanupInput(input)) return json({ error: "invalid cleanup policy" }, 400);
+  const cutoff = Date.now() - input.protectHours * 3_600_000;
+  const candidates = await env.DB.prepare(
+    `SELECT id, encrypted_size FROM backups
+     WHERE device_id = ?1 AND backup_kind = 'AUTO' AND pinned = 0
+       AND status = 'COMPLETE' AND uploaded_at < ?2
+       AND id NOT IN (
+         SELECT id FROM backups
+         WHERE device_id = ?1 AND backup_kind = 'AUTO' AND pinned = 0 AND status = 'COMPLETE'
+         ORDER BY uploaded_at DESC LIMIT ?3
+       )
+     ORDER BY uploaded_at ASC LIMIT 100`,
+  )
+    .bind(input.deviceId, cutoff, input.retain)
+    .all<{ id: string; encrypted_size: number }>();
+  const ids = candidates.results.map((row) => row.id);
+  const bytes = candidates.results.reduce((sum, row) => sum + row.encrypted_size, 0);
+  if (!dryRun && ids.length > 0) {
+    await env.DB.batch(ids.map((id) => env.DB.prepare("DELETE FROM backups WHERE id = ?1").bind(id)));
+  }
+  return json({ deletedIds: dryRun ? [] : ids, candidateIds: ids, bytes });
+}
+
+async function updateBackup(request: Request, id: string, env: Env): Promise<Response> {
+  if (!ID_PATTERN.test(id)) return json({ error: "invalid backup id" }, 400);
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "invalid update request" }, 400);
+  }
+  if (!body || typeof body !== "object" || typeof (body as { pinned?: unknown }).pinned !== "boolean") {
+    return json({ error: "pinned must be boolean" }, 400);
+  }
+  const result = await env.DB.prepare("UPDATE backups SET pinned = ?2 WHERE id = ?1 AND status = 'COMPLETE'")
+    .bind(id, (body as { pinned: boolean }).pinned ? 1 : 0)
+    .run();
+  return result.meta.changes === 0 ? json({ error: "backup not found" }, 404) : json({ ok: true });
+}
+
+async function deleteBackup(id: string, env: Env): Promise<Response> {
+  if (!ID_PATTERN.test(id)) return json({ error: "invalid backup id" }, 400);
+  const row = await env.DB.prepare("SELECT pinned FROM backups WHERE id = ?1").bind(id).first<{ pinned: number }>();
+  if (!row) return json({ ok: true });
+  if (row.pinned === 1) return json({ error: "pinned backup cannot be deleted" }, 409);
+  await env.DB.prepare("DELETE FROM backups WHERE id = ?1").bind(id).run();
+  return json({ ok: true });
 }
 
 async function downloadBackup(id: string, env: Env): Promise<Response> {
@@ -209,9 +299,21 @@ export default {
     if (request.method === "GET" && url.pathname === "/v1/backups") {
       return listBackups(env);
     }
+    if (request.method === "POST" && url.pathname === "/v1/backups/cleanup-preview") {
+      return cleanupBackups(request, env, true);
+    }
+    if (request.method === "POST" && url.pathname === "/v1/backups/cleanup") {
+      return cleanupBackups(request, env, false);
+    }
     const match = url.pathname.match(/^\/v1\/backups\/([0-9a-f-]{36})$/i);
     if (request.method === "GET" && match) {
       return downloadBackup(match[1], env);
+    }
+    if (request.method === "PATCH" && match) {
+      return updateBackup(request, match[1], env);
+    }
+    if (request.method === "DELETE" && match) {
+      return deleteBackup(match[1], env);
     }
     return json({ error: "method not allowed" }, 405);
   },

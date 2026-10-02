@@ -9,7 +9,11 @@ use reqwest::{Client, StatusCode, Url};
 use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{path::PathBuf, time::Duration};
+use std::{
+    path::PathBuf,
+    sync::atomic::{AtomicBool, Ordering},
+    time::Duration,
+};
 use zeroize::Zeroizing;
 
 use crate::{
@@ -21,9 +25,29 @@ use crate::{
 const CONFIG_KEY: &str = "cloud_backup_config";
 const LAST_ERROR_KEY: &str = "cloud_backup_last_error";
 const LAST_SUCCESS_KEY: &str = "cloud_backup_last_success";
+const LAST_REVISION_KEY: &str = "cloud_backup_last_revision";
+const POLICY_KEY: &str = "cloud_backup_policy";
 const MAGIC: &[u8; 8] = b"MFCLD1\0\0";
 const MAX_DOWNLOAD_BYTES: usize = 20 * 1024 * 1024;
 const MIN_RECOVERY_KEY_LENGTH: usize = 24;
+static CLOUD_BACKUP_RUNNING: AtomicBool = AtomicBool::new(false);
+
+struct BackupRunGuard;
+
+impl BackupRunGuard {
+    fn acquire() -> Result<Self, String> {
+        CLOUD_BACKUP_RUNNING
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .map(|_| Self)
+            .map_err(|_| "云备份正在执行".to_string())
+    }
+}
+
+impl Drop for BackupRunGuard {
+    fn drop(&mut self) {
+        CLOUD_BACKUP_RUNNING.store(false, Ordering::Release);
+    }
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,6 +71,26 @@ struct CloudConfig {
     recovery_key: Zeroizing<String>,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudBackupPolicy {
+    enabled: bool,
+    interval_hours: i64,
+    retain: usize,
+    protect_hours: i64,
+}
+
+impl Default for CloudBackupPolicy {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            interval_hours: 24,
+            retain: 10,
+            protect_hours: 24,
+        }
+    }
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CloudBackupStatus {
@@ -55,6 +99,11 @@ pub struct CloudBackupStatus {
     device_id: Option<String>,
     last_success: Option<i64>,
     last_error: Option<String>,
+    policy: CloudBackupPolicy,
+    next_at: Option<i64>,
+    current_revision: i64,
+    last_backup_revision: i64,
+    running: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -68,6 +117,15 @@ pub struct CloudBackupRecord {
     source_size: i64,
     schema_version: i64,
     checksum: String,
+    backup_kind: String,
+    pinned: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CleanupResult {
+    deleted_ids: Vec<String>,
+    candidate_ids: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -93,6 +151,34 @@ fn put_setting(app: &tauri::AppHandle, key: &str, value: &str) -> Result<(), Str
             params![key, value, now()],
         )
         .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
+fn policy(app: &tauri::AppHandle) -> Result<CloudBackupPolicy, String> {
+    setting(app, POLICY_KEY)?
+        .map(|value| serde_json::from_str(&value).map_err(|error| error.to_string()))
+        .transpose()
+        .map(|value| value.unwrap_or_default())
+}
+
+fn validate_policy(value: &CloudBackupPolicy) -> Result<(), String> {
+    if !(1..=168).contains(&value.interval_hours)
+        || !(1..=100).contains(&value.retain)
+        || !(1..=720).contains(&value.protect_hours)
+    {
+        return Err("自动备份间隔须为 1–168 小时，保留 1–100 份，保护期 1–720 小时".into());
+    }
+    Ok(())
+}
+
+fn current_revision(app: &tauri::AppHandle) -> Result<i64, String> {
+    connect(app)
+        .map_err(|error| error.to_string())?
+        .query_row(
+            "SELECT revision FROM cloud_change_state WHERE id=1",
+            [],
+            |row| row.get(0),
+        )
         .map_err(|error| error.to_string())
 }
 
@@ -296,13 +382,40 @@ pub fn save_cloud_backup_config(
 pub fn get_cloud_backup_status(app: tauri::AppHandle) -> Result<CloudBackupStatus, String> {
     let stored = setting(&app, CONFIG_KEY)?
         .and_then(|raw| serde_json::from_str::<StoredCloudConfig>(&raw).ok());
+    let policy = policy(&app)?;
+    let last_success = setting(&app, LAST_SUCCESS_KEY)?.and_then(|value| value.parse().ok());
+    let last_backup_revision = setting(&app, LAST_REVISION_KEY)?
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(-1);
     Ok(CloudBackupStatus {
         configured: stored.is_some(),
         endpoint: stored.as_ref().map(|value| value.endpoint.clone()),
         device_id: stored.as_ref().map(|value| value.device_id.clone()),
-        last_success: setting(&app, LAST_SUCCESS_KEY)?.and_then(|value| value.parse().ok()),
+        last_success,
         last_error: setting(&app, LAST_ERROR_KEY)?.filter(|value| !value.is_empty()),
+        next_at: if policy.enabled {
+            last_success.map(|value| value + policy.interval_hours * 3_600_000)
+        } else {
+            None
+        },
+        policy,
+        current_revision: current_revision(&app)?,
+        last_backup_revision,
+        running: CLOUD_BACKUP_RUNNING.load(Ordering::Acquire),
     })
+}
+
+#[tauri::command]
+pub fn save_cloud_backup_policy(
+    app: tauri::AppHandle,
+    input: CloudBackupPolicy,
+) -> Result<(), String> {
+    validate_policy(&input)?;
+    put_setting(
+        &app,
+        POLICY_KEY,
+        &serde_json::to_string(&input).map_err(|error| error.to_string())?,
+    )
 }
 
 #[tauri::command]
@@ -346,17 +459,51 @@ pub async fn list_cloud_backups(
         .map_err(|_| "云端返回了无效的备份列表".into())
 }
 
-#[tauri::command]
-pub async fn upload_cloud_backup(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, SecurityState>,
+async fn run_cleanup(
+    app: &tauri::AppHandle,
+    state: &SecurityState,
+    dry_run: bool,
+) -> Result<CleanupResult, String> {
+    let config = load_config(app, state)?;
+    let policy = policy(app)?;
+    let path = if dry_run {
+        "cleanup-preview"
+    } else {
+        "cleanup"
+    };
+    let response = client()?
+        .post(format!("{}/v1/backups/{path}", config.endpoint))
+        .bearer_auth(config.recovery_key.as_str())
+        .json(&serde_json::json!({
+            "deviceId": config.device_id,
+            "retain": policy.retain,
+            "protectHours": policy.protect_hours,
+        }))
+        .send()
+        .await
+        .map_err(|error| format!("无法连接云端：{error}"))?;
+    if !response.status().is_success() {
+        return Err(response_error(response).await);
+    }
+    response
+        .json()
+        .await
+        .map_err(|_| "云端返回了无效的清理结果".into())
+}
+
+async fn upload_cloud_backup_kind(
+    app: &tauri::AppHandle,
+    state: &SecurityState,
+    backup_kind: &str,
 ) -> Result<CloudBackupRecord, String> {
+    let _guard = BackupRunGuard::acquire()?;
     let result = async {
-        let config = load_config(&app, &state)?;
+        let config = load_config(app, state)?;
         let backup_id = id();
         let created_at = now();
-        let snapshot = temporary_path(&app, &format!("upload-{backup_id}.sqlite3"))?;
-        let source = crate::database::path(&app).map_err(|error| error.to_string())?;
+        let revision = current_revision(app)?;
+        let snapshot = temporary_path(app, &format!("upload-{backup_id}.sqlite3"))?;
+        let source = crate::database::path(app).map_err(|error| error.to_string())?;
         crate::database_backup::backup(&source, &snapshot)?;
         let plaintext = std::fs::read(&snapshot).map_err(|error| error.to_string())?;
         let _ = std::fs::remove_file(&snapshot);
@@ -365,42 +512,157 @@ pub async fn upload_cloud_backup(
             return Err("当前数据库加密后超过 20 MiB 云备份限制".into());
         }
         let checksum = format!("{:x}", Sha256::digest(&encrypted));
-        let response = client()?
-            .post(format!("{}/v1/backups", config.endpoint))
-            .bearer_auth(config.recovery_key.as_str())
-            .header("x-backup-id", &backup_id)
-            .header("x-device-id", &config.device_id)
-            .header("x-created-at", created_at)
-            .header("x-source-size", plaintext.len())
-            .header("x-schema-version", 8)
-            .header("x-checksum", &checksum)
-            .body(encrypted.clone())
-            .send()
-            .await
-            .map_err(|error| format!("无法连接云端：{error}"))?;
-        if !response.status().is_success() {
-            return Err(response_error(response).await);
+        let mut response = None;
+        for attempt in 0..3 {
+            match client()?
+                .post(format!("{}/v1/backups", config.endpoint))
+                .bearer_auth(config.recovery_key.as_str())
+                .header("x-backup-id", &backup_id)
+                .header("x-device-id", &config.device_id)
+                .header("x-created-at", created_at)
+                .header("x-source-size", plaintext.len())
+                .header("x-schema-version", 9)
+                .header("x-checksum", &checksum)
+                .header("x-backup-kind", backup_kind)
+                .body(encrypted.clone())
+                .send()
+                .await
+            {
+                Ok(value) if value.status().is_success() => {
+                    response = Some(value);
+                    break;
+                }
+                Ok(value) if value.status().is_server_error() && attempt < 2 => {}
+                Ok(value) => return Err(response_error(value).await),
+                Err(_) if attempt < 2 => {}
+                Err(error) => return Err(format!("无法连接云端：{error}")),
+            }
+            tokio::time::sleep(Duration::from_millis(500 * (attempt + 1))).await;
         }
-        Ok(CloudBackupRecord {
+        response.ok_or("云备份上传失败")?;
+        let record = CloudBackupRecord {
             id: backup_id,
             device_id: config.device_id,
             created_at,
             uploaded_at: now(),
             encrypted_size: encrypted.len() as i64,
             source_size: plaintext.len() as i64,
-            schema_version: 8,
+            schema_version: 9,
             checksum,
-        })
+            backup_kind: backup_kind.to_string(),
+            pinned: false,
+        };
+        put_setting(app, LAST_REVISION_KEY, &revision.to_string())?;
+        Ok(record)
     }
     .await;
     match &result {
         Ok(_) => {
-            put_setting(&app, LAST_SUCCESS_KEY, &now().to_string())?;
-            put_setting(&app, LAST_ERROR_KEY, "")?;
+            put_setting(app, LAST_SUCCESS_KEY, &now().to_string())?;
+            match run_cleanup(app, state, false).await {
+                Ok(_) => put_setting(app, LAST_ERROR_KEY, "")?,
+                Err(error) => put_setting(
+                    app,
+                    LAST_ERROR_KEY,
+                    &format!("备份成功，旧备份清理失败：{error}"),
+                )?,
+            }
         }
-        Err(error) => put_setting(&app, LAST_ERROR_KEY, error)?,
+        Err(error) => put_setting(app, LAST_ERROR_KEY, error)?,
     }
     result
+}
+
+#[tauri::command]
+pub async fn upload_cloud_backup(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SecurityState>,
+) -> Result<CloudBackupRecord, String> {
+    upload_cloud_backup_kind(&app, &state, "MANUAL").await
+}
+
+#[tauri::command]
+pub async fn run_automatic_cloud_backup(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SecurityState>,
+    force: bool,
+) -> Result<Option<CloudBackupRecord>, String> {
+    let policy = policy(&app)?;
+    if !policy.enabled || setting(&app, CONFIG_KEY)?.is_none() || state.key().is_err() {
+        return Ok(None);
+    }
+    let revision = current_revision(&app)?;
+    let last_revision = setting(&app, LAST_REVISION_KEY)?
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(-1);
+    let last_success = setting(&app, LAST_SUCCESS_KEY)?
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0);
+    if !force
+        && (revision <= last_revision || now() - last_success < policy.interval_hours * 3_600_000)
+    {
+        return Ok(None);
+    }
+    upload_cloud_backup_kind(&app, &state, "AUTO")
+        .await
+        .map(Some)
+}
+
+#[tauri::command]
+pub async fn cleanup_cloud_backups(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SecurityState>,
+    dry_run: bool,
+) -> Result<Vec<String>, String> {
+    run_cleanup(&app, &state, dry_run).await.map(|result| {
+        if dry_run {
+            result.candidate_ids
+        } else {
+            result.deleted_ids
+        }
+    })
+}
+
+#[tauri::command]
+pub async fn set_cloud_backup_pinned(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SecurityState>,
+    backup_id: String,
+    pinned: bool,
+) -> Result<(), String> {
+    let config = load_config(&app, &state)?;
+    let response = client()?
+        .patch(format!("{}/v1/backups/{backup_id}", config.endpoint))
+        .bearer_auth(config.recovery_key.as_str())
+        .json(&serde_json::json!({ "pinned": pinned }))
+        .send()
+        .await
+        .map_err(|error| format!("无法连接云端：{error}"))?;
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(response_error(response).await)
+    }
+}
+
+#[tauri::command]
+pub async fn delete_cloud_backup(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, SecurityState>,
+    backup_id: String,
+) -> Result<(), String> {
+    let config = load_config(&app, &state)?;
+    let response = client()?
+        .delete(format!("{}/v1/backups/{backup_id}", config.endpoint))
+        .bearer_auth(config.recovery_key.as_str())
+        .send()
+        .await
+        .map_err(|error| format!("无法连接云端：{error}"))?;
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(response_error(response).await)
+    }
 }
 
 async fn materialize_backup(

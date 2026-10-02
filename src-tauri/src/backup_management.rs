@@ -164,7 +164,7 @@ pub fn run_automatic_backup(app: tauri::AppHandle, force: bool) -> Result<Option
             .map_err(|e| e.to_string())?
             .len() as i64;
         c.execute(
-            "INSERT INTO automatic_backups VALUES(?1,?2,?3,?4,8,?5)",
+            "INSERT INTO automatic_backups VALUES(?1,?2,?3,?4,9,?5)",
             params![record_id, destination.to_string_lossy(), stamp, size, hash],
         )
         .map_err(|e| e.to_string())?;
@@ -265,7 +265,7 @@ pub(crate) fn preview_path(source: &Path) -> Result<BackupPreview, String> {
         .map_err(|e| e.to_string())?;
     Ok(BackupPreview {
         schema_version,
-        upgraded_version: 8,
+        upgraded_version: 9,
         has_security,
         counts,
     })

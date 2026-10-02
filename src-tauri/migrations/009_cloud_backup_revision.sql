@@ -1,0 +1,105 @@
+CREATE TABLE cloud_change_state (
+    id INTEGER PRIMARY KEY CHECK(id = 1),
+    revision INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL DEFAULT 0
+);
+
+INSERT OR IGNORE INTO cloud_change_state(id, revision, updated_at) VALUES(1, 0, 0);
+
+CREATE TRIGGER cloud_change_accounts_insert AFTER INSERT ON accounts BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_accounts_update AFTER UPDATE ON accounts BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_accounts_delete AFTER DELETE ON accounts BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_categories_insert AFTER INSERT ON categories BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_categories_update AFTER UPDATE ON categories BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_categories_delete AFTER DELETE ON categories BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_transactions_insert AFTER INSERT ON transactions BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_transactions_update AFTER UPDATE ON transactions BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_transactions_delete AFTER DELETE ON transactions BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_transfers_insert AFTER INSERT ON transfers BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_transfers_update AFTER UPDATE ON transfers BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_transfers_delete AFTER DELETE ON transfers BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_recurring_transactions_insert AFTER INSERT ON recurring_transactions BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_recurring_transactions_update AFTER UPDATE ON recurring_transactions BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_recurring_transactions_delete AFTER DELETE ON recurring_transactions BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_planned_expenses_insert AFTER INSERT ON planned_expenses BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_planned_expenses_update AFTER UPDATE ON planned_expenses BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_planned_expenses_delete AFTER DELETE ON planned_expenses BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_installments_insert AFTER INSERT ON installments BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_installments_update AFTER UPDATE ON installments BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_installments_delete AFTER DELETE ON installments BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_budgets_insert AFTER INSERT ON budgets BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_budgets_update AFTER UPDATE ON budgets BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_budgets_delete AFTER DELETE ON budgets BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+
+CREATE TRIGGER cloud_change_journey_projects_insert AFTER INSERT ON journey_projects BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_journey_projects_update AFTER UPDATE ON journey_projects BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_journey_projects_delete AFTER DELETE ON journey_projects BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_journey_items_insert AFTER INSERT ON journey_project_items BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_journey_items_update AFTER UPDATE ON journey_project_items BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_journey_items_delete AFTER DELETE ON journey_project_items BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_daily_tasks_insert AFTER INSERT ON daily_tasks BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_daily_tasks_update AFTER UPDATE ON daily_tasks BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_daily_tasks_delete AFTER DELETE ON daily_tasks BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_daily_events_insert AFTER INSERT ON daily_events BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_daily_events_update AFTER UPDATE ON daily_events BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_daily_events_delete AFTER DELETE ON daily_events BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_knowledge_notes_insert AFTER INSERT ON knowledge_notes BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_knowledge_notes_update AFTER UPDATE ON knowledge_notes BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_knowledge_notes_delete AFTER DELETE ON knowledge_notes BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_note_attachments_insert AFTER INSERT ON note_attachments BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_note_attachments_update AFTER UPDATE ON note_attachments BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_note_attachments_delete AFTER DELETE ON note_attachments BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_private_events_insert AFTER INSERT ON private_calendar_events BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_private_events_update AFTER UPDATE ON private_calendar_events BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_private_events_delete AFTER DELETE ON private_calendar_events BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_vault_items_insert AFTER INSERT ON vault_items BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_vault_items_update AFTER UPDATE ON vault_items BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_vault_items_delete AFTER DELETE ON vault_items BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+
+CREATE TRIGGER cloud_change_journey_goals_insert AFTER INSERT ON journey_goals BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_journey_goals_update AFTER UPDATE ON journey_goals BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_journey_goals_delete AFTER DELETE ON journey_goals BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_journey_milestones_insert AFTER INSERT ON journey_milestones BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_journey_milestones_update AFTER UPDATE ON journey_milestones BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_journey_milestones_delete AFTER DELETE ON journey_milestones BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_journey_logs_insert AFTER INSERT ON journey_logs BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_journey_logs_update AFTER UPDATE ON journey_logs BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_journey_logs_delete AFTER DELETE ON journey_logs BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_journey_ideas_insert AFTER INSERT ON journey_ideas BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_journey_ideas_update AFTER UPDATE ON journey_ideas BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_journey_ideas_delete AFTER DELETE ON journey_ideas BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_private_partners_insert AFTER INSERT ON private_partners BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_private_partners_update AFTER UPDATE ON private_partners BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_private_partners_delete AFTER DELETE ON private_partners BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_note_drafts_insert AFTER INSERT ON note_drafts BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_note_drafts_update AFTER UPDATE ON note_drafts BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_note_drafts_delete AFTER DELETE ON note_drafts BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_note_versions_insert AFTER INSERT ON note_versions BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_note_versions_delete AFTER DELETE ON note_versions BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_task_routines_insert AFTER INSERT ON task_routines BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_task_routines_update AFTER UPDATE ON task_routines BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_task_routines_delete AFTER DELETE ON task_routines BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_subscriptions_insert AFTER INSERT ON subscriptions BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_subscriptions_update AFTER UPDATE ON subscriptions BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_subscriptions_delete AFTER DELETE ON subscriptions BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_installment_payments_insert AFTER INSERT ON installment_payments BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_installment_payments_delete AFTER DELETE ON installment_payments BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_recurring_payments_insert AFTER INSERT ON recurring_payments BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_recurring_payments_delete AFTER DELETE ON recurring_payments BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_routine_occurrences_insert AFTER INSERT ON routine_occurrences BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_routine_occurrences_update AFTER UPDATE ON routine_occurrences BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_routine_occurrences_delete AFTER DELETE ON routine_occurrences BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_subscription_payments_insert AFTER INSERT ON subscription_payments BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_subscription_payments_delete AFTER DELETE ON subscription_payments BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_today_pins_insert AFTER INSERT ON today_pinned_projects BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_today_pins_update AFTER UPDATE ON today_pinned_projects BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_today_pins_delete AFTER DELETE ON today_pinned_projects BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_app_security_insert AFTER INSERT ON app_security BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_app_security_update AFTER UPDATE ON app_security BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_vault_keys_insert AFTER INSERT ON vault_keys BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_vault_keys_update AFTER UPDATE ON vault_keys BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_settings_insert AFTER INSERT ON settings WHEN NEW.key NOT LIKE 'cloud_backup_%' BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_settings_update AFTER UPDATE ON settings WHEN NEW.key NOT LIKE 'cloud_backup_%' BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+CREATE TRIGGER cloud_change_settings_delete AFTER DELETE ON settings WHEN OLD.key NOT LIKE 'cloud_backup_%' BEGIN UPDATE cloud_change_state SET revision=revision+1,updated_at=CAST(strftime('%s','now') AS INTEGER)*1000 WHERE id=1; END;
+
+INSERT INTO schema_migrations VALUES(9,CAST(strftime('%s','now') AS INTEGER)*1000);
